@@ -1,0 +1,8 @@
+.reference-library-input {
+  width: 100%;
+  min-width: 18em;
+}
+
+.reference-library-invalid {
+  border-color: var(--text-error) !important;
+}

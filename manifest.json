@@ -1,0 +1,10 @@
+{
+  "id": "reference-library",
+  "name": "Reference Library",
+  "version": "0.1.0",
+  "minAppVersion": "1.8.7",
+  "description": "Manage books, articles and web pages as notes: look up metadata by ISBN, DOI or URL, assign citekeys, and file PDFs.",
+  "author": "Jesse Griffin",
+  "authorUrl": "https://ekfocus.com",
+  "isDesktopOnly": false
+}
