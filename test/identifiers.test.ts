@@ -68,7 +68,7 @@ test("safe filenames are bounded by encoded length and avoid Windows device name
 	assert.equal(emoji, "😀".repeat(MAX_FILENAME_BYTES / 4));
 	assert.ok(new TextEncoder().encode(safeFilename("é".repeat(300))).length <= MAX_FILENAME_BYTES);
 	assert.equal(safeFilename("CON"), "CON_");
-	assert.equal(safeFilename("nul.tar"), "nul.tar_");
+	assert.equal(safeFilename("nul.tar"), "nul_.tar");
 	assert.equal(safeFilename("Console"), "Console");
 });
 
@@ -148,4 +148,35 @@ test("detects old-scheme arXiv IDs", () => {
 		assert.deepEqual(detectIdentifier(input), { kind: "arxiv", value }, input);
 	}
 	assert.deepEqual(detectIdentifier("arXiv:2303.08774"), { kind: "arxiv", value: "2303.08774" });
+});
+
+// PR #13 review
+test("dotted Windows device names get a safe stem", () => {
+	assert.equal(safeFilename("NUL.tar"), "NUL_.tar");
+	assert.equal(safeFilename("CON.example"), "CON_.example");
+	assert.equal(safeFilename("COM1.paper"), "COM1_.paper");
+	assert.equal(safeFilename("nul .tar.gz"), "nul_.tar.gz");
+	assert.equal(safeFilename("Nullify.tar"), "Nullify.tar");
+	for (const n of ["NUL.tar", "CON.example", "COM1.paper", "aux"]) {
+		assert.ok(!/^(con|prn|aux|nul|com\d|lpt\d)$/i.test(safeFilename(n).split(".")[0].trim()), n);
+	}
+});
+
+test("DOI trimming stays linear on hostile PDF text", () => {
+	const start = performance.now();
+	assert.equal(findIdentifierInText("10.1000/a" + ")".repeat(40000))?.value, "10.1000/a");
+	assert.equal(findIdentifierInText("10.1000/a(" + ")".repeat(40000))?.value, "10.1000/a()");
+	assert.equal(findIdentifierInText("10.1000/a" + ".,;)]>".repeat(20000))?.value, "10.1000/a");
+	assert.ok(performance.now() - start < 1000, `took ${performance.now() - start} ms`);
+});
+
+test("markdownSafeUrl keeps IPv6 hosts usable and rejects odd host names", () => {
+	const v6 = markdownSafeUrl("https://[2606:4700:4700::1111]/reference");
+	assert.equal(v6, "https://[2606:4700:4700::1111]/reference");
+	assert.equal(new URL(v6 as string).hostname, "[2606:4700:4700::1111]");
+	assert.equal(markdownSafeUrl("http://192.0.2.1:8080/a(b)"), "http://192.0.2.1:8080/a%28b%29");
+	assert.equal(markdownSafeUrl("https://a`b.com/x"), undefined);
+	assert.equal(markdownSafeUrl("https://a(b).com/"), undefined);
+	assert.equal(markdownSafeUrl("https://user:pw@example.com/p"), "https://example.com/p");
+	assert.equal(markdownSafeUrl("https://xn--bcher-kva.example/"), "https://xn--bcher-kva.example/");
 });

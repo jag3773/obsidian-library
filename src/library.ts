@@ -27,23 +27,29 @@ export class Cancelled extends Error {
 	}
 }
 
-/** Identity used for duplicate detection: lower-case DOI, ISBN-13, URL without a trailing slash. */
+/**
+ * Identity used for duplicate detection: lower-case DOI, ISBN-13, and URLs without a
+ * trailing slash. A reference can carry several URLs: the canonical one and the URL it
+ * was captured from (e.g. a clip's "source").
+ */
 interface Identity {
 	doi?: string;
 	isbn?: string;
-	url?: string;
+	urls: string[];
 }
 
-function identityOf(data: Partial<Pick<ReferenceData, "doi" | "isbn" | "url">>): Identity {
+const urlKey = (v: unknown) => (typeof v === "string" && /^https?:\/\//i.test(v.trim()) ? v.trim().replace(/\/$/, "") : undefined);
+
+function identityOf(data: Partial<Pick<ReferenceData, "doi" | "isbn" | "url">>, extraUrls: unknown[] = []): Identity {
 	return {
 		doi: data.doi ? normalizeDoi(String(data.doi))?.toLowerCase() : undefined,
 		isbn: data.isbn ? canonicalIsbn(String(data.isbn)) ?? undefined : undefined,
-		url: data.url ? String(data.url).trim().replace(/\/$/, "") || undefined : undefined,
+		urls: [data.url, ...extraUrls].map(urlKey).filter((u): u is string => !!u),
 	};
 }
 
 function sameIdentity(a: Identity, b: Identity): boolean {
-	return (!!a.doi && a.doi === b.doi) || (!!a.isbn && a.isbn === b.isbn) || (!!a.url && a.url === b.url);
+	return (!!a.doi && a.doi === b.doi) || (!!a.isbn && a.isbn === b.isbn) || a.urls.some((u) => b.urls.includes(u));
 }
 
 /**
@@ -102,8 +108,16 @@ export class Library {
 		return this.reservations;
 	}
 
-	private reserve(file: TFile, citekey: string, data: Partial<ReferenceData>): void {
-		this.reservations.push({ file, citekey, ...identityOf(data), until: Date.now() + RESERVATION_MS });
+	private reserve(file: TFile, citekey: string, data: Partial<ReferenceData>, extraUrls: string[] = []): void {
+		this.reservations.push({ file, citekey, ...identityOf(data, extraUrls), until: Date.now() + RESERVATION_MS });
+	}
+
+	/**
+	 * Throw Cancelled if the plugin was unloaded. exclusive() checks once on entry; writers
+	 * call this again after any await, right before touching the vault.
+	 */
+	private assertActive(): void {
+		if (!this.active()) throw new Cancelled();
 	}
 
 	/** True while the TFile is still in the vault (not deleted or replaced). */
@@ -150,19 +164,19 @@ export class Library {
 		return null;
 	}
 
-	/** Find an existing reference with the same DOI, ISBN (either form) or URL. */
+	/** Find an existing reference with the same DOI, ISBN (either form) or any of its URLs. */
 	findExisting(data: Partial<Pick<ReferenceData, "doi" | "isbn" | "url">>, except?: TFile): TFile | null {
 		const want = identityOf(data);
-		if (!want.doi && !want.isbn && !want.url) return null;
+		if (!want.doi && !want.isbn && !want.urls.length) return null;
 		for (const r of this.liveReservations()) if (r.file !== except && sameIdentity(want, r)) return r.file;
 		for (const f of this.referenceFiles()) {
 			if (f === except) continue;
 			const fm = this.frontmatter(f);
-			const have = identityOf({
-				doi: fm[this.prop("doi")] as string | undefined,
-				isbn: fm[this.prop("isbn")] as string | undefined,
-				url: fm[this.prop("url")] as string | undefined,
-			});
+			// The mapped url plus any capture-URL properties (a clip keeps its "source").
+			const have = identityOf(
+				{ doi: fm[this.prop("doi")] as string | undefined, isbn: fm[this.prop("isbn")] as string | undefined },
+				[fm[this.prop("url")], ...this.s.urlProperties.map((k) => fm[k])]
+			);
 			if (sameIdentity(want, have)) return f;
 		}
 		return null;
@@ -234,6 +248,7 @@ export class Library {
 
 	/** Fill empty properties only. Never overwrites a value the user set. */
 	async fillProperties(file: TFile, props: Frontmatter): Promise<void> {
+		this.assertActive();
 		await this.app.fileManager.processFrontMatter(file, (fm: Frontmatter) => {
 			for (const [k, v] of Object.entries(props)) if (isEmpty(fm[k])) fm[k] = v;
 		});
@@ -268,7 +283,10 @@ export class Library {
 		const parts = p.split("/");
 		for (let i = 1; i <= parts.length; i++) {
 			const sub = parts.slice(0, i).join("/");
-			if (!this.app.vault.getAbstractFileByPath(sub)) await this.app.vault.createFolder(sub);
+			if (!this.app.vault.getAbstractFileByPath(sub)) {
+				this.assertActive();
+				await this.app.vault.createFolder(sub);
+			}
 		}
 	}
 
@@ -285,7 +303,10 @@ export class Library {
 	async moveTo(file: TFile, folder: string, basename: string): Promise<TFile> {
 		await this.ensureFolder(folder);
 		const target = this.freePath(folder, basename, file.extension, file);
-		if (target !== file.path) await this.app.fileManager.renameFile(file, target);
+		if (target !== file.path) {
+			this.assertActive();
+			await this.app.fileManager.renameFile(file, target);
+		}
 		return file;
 	}
 
@@ -296,6 +317,8 @@ export class Library {
 		await this.ensureFolder(folder);
 		const body = await this.renderBody(data, citekey);
 		const path = this.freePath(folder, this.formatName(this.s.filenameFormat, citekey, data), "md");
+		// Reading a template can take a while; don't create the note if we were unloaded meanwhile.
+		this.assertActive();
 		const file = await this.app.vault.create(path, body);
 		this.reserve(file, citekey, data);
 		await this.fillProperties(file, this.propertiesFor(data, citekey, status));
@@ -305,9 +328,11 @@ export class Library {
 	/**
 	 * Fill an existing note from looked-up data, give it a citekey if it lacks one,
 	 * and move it into the references folder under the configured filename.
+	 * `captureUrls` are other URLs the note was captured from, counted for duplicate
+	 * detection until the cache indexes the note (afterwards its url properties are read).
 	 * Call inside exclusive().
 	 */
-	async complete(file: TFile, data: ReferenceData | null, status?: string): Promise<TFile> {
+	async complete(file: TFile, data: ReferenceData | null, status?: string, captureUrls: string[] = []): Promise<TFile> {
 		const fm = this.frontmatter(file);
 		const existingKey = String(fm[this.prop("citekey")] ?? "").trim();
 		const basis: ReferenceData = data ?? {
@@ -318,7 +343,7 @@ export class Library {
 			source: "note",
 		};
 		const citekey = existingKey || this.makeCitekey(basis, file);
-		this.reserve(file, citekey, basis);
+		this.reserve(file, citekey, basis, captureUrls);
 		await this.fillProperties(file, this.propertiesFor(basis, citekey, isEmpty(fm[this.prop("status")]) ? status : undefined));
 		// Notes already inside the references folder keep their subfolder.
 		const folder = this.isReference(file) ? file.parent?.path ?? this.s.referencesFolder : this.s.referencesFolder;
@@ -338,19 +363,22 @@ export class Library {
 
 	/**
 	 * File an attachment under the configured name and link it from the note.
-	 * Pass `known` for values the metadata cache may not have indexed yet (a just-created note).
-	 * Call inside exclusive().
+	 * Values set on the note win; `known` fills in what the metadata cache hasn't indexed yet
+	 * (a just-created or just-reserved note). Call inside exclusive().
 	 */
 	async attach(note: TFile, attachment: TFile, known: AttachmentNaming = {}): Promise<void> {
+		const fm = this.frontmatter(note);
 		const fromNote = this.keyInputsFromNote(note);
-		const citekey = known.citekey || this.citekeyOf(note) || note.basename;
+		const noteTitle = String(fm[this.prop("title")] ?? "").trim();
+		const citekey = this.citekeyOf(note) || known.citekey || note.basename;
 		const naming: Partial<ReferenceData> = {
-			title: known.title || this.frontmatter(note)[this.prop("title")]?.toString() || "",
-			familyNames: known.familyNames?.length ? known.familyNames : fromNote.familyNames,
-			year: known.year ?? fromNote.year,
+			title: noteTitle || known.title || "",
+			familyNames: fromNote.familyNames.length ? fromNote.familyNames : known.familyNames ?? [],
+			year: fromNote.year ?? known.year,
 		};
 		await this.moveTo(attachment, this.s.attachmentsFolder, this.formatName(this.s.attachmentFilenameFormat, citekey, naming));
 		const link = this.linkTo(attachment, note);
+		this.assertActive();
 		await this.app.fileManager.processFrontMatter(note, (f: Frontmatter) => {
 			const pdfKey = this.prop("pdf");
 			if (attachment.extension === "pdf" && isEmpty(f[pdfKey])) f[pdfKey] = link;
@@ -367,6 +395,7 @@ export class Library {
 		const inputs = this.keyInputsFromNote(file);
 		const key = this.makeCitekey(inputs, file);
 		this.reserve(file, key, {});
+		this.assertActive();
 		await this.app.fileManager.processFrontMatter(file, (f: Frontmatter) => {
 			f[this.prop("citekey")] = key;
 		});

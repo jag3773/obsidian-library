@@ -61,7 +61,9 @@ export class Inbox {
 				new Notice(`Reference Library: ${file.name} matches existing ${dup.basename}; left in the inbox.`);
 				return null;
 			}
-			const moved = await this.library.complete(file, basis, s.clipStatus);
+			// The clip keeps the URL property it came from, so later captures of the same original
+			// URL still match after the mapped url becomes the canonical one.
+			const moved = await this.library.complete(file, basis, s.clipStatus, [url]);
 			new Notice(`Reference Library: filed ${moved.basename}`);
 			return moved;
 		});
@@ -93,21 +95,19 @@ export class Inbox {
 			};
 		}
 		const found = data;
+		// The note's frontmatter may not be indexed yet (new, or reserved by a concurrent
+		// capture), so pass the naming values along; values already on the note win.
+		const naming = { title: found.title, familyNames: found.familyNames, year: found.year };
 		return this.library.exclusive(async () => {
 			if (!this.stillWaiting(file)) return null;
 			const dup = this.library.findExisting(found);
 			if (dup) {
-				await this.library.attach(dup, file);
+				await this.library.attach(dup, file, naming);
 				new Notice(`Reference Library: attached ${file.name} to existing ${dup.basename}`);
 				return dup;
 			}
 			const note = await this.library.create(found, s.defaultStatus);
-			// The new note's frontmatter may not be indexed yet, so pass the naming values along.
-			await this.library.attach(note, file, {
-				title: found.title,
-				familyNames: found.familyNames,
-				year: found.year,
-			});
+			await this.library.attach(note, file, naming);
 			new Notice(`Reference Library: created ${note.basename} from ${found.source}`);
 			return note;
 		});

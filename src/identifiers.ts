@@ -68,23 +68,32 @@ export function normalizeDoi(raw: string): string | null {
 	return DOI_WHOLE_RE.test(s) ? s : null;
 }
 
-/** Trim prose punctuation from a DOI found in running text, keeping balanced brackets. */
+const CLOSERS: Record<string, string> = { ")": "(", "]": "[", ">": "<" };
+
+/**
+ * Trim prose punctuation from a DOI found in running text, keeping balanced brackets.
+ * Linear: bracket balances are counted once and updated as characters are trimmed,
+ * since the text can come from an untrusted PDF.
+ */
 function trimDoi(candidate: string): string {
-	let s = candidate;
-	const pairs: Record<string, string> = { ")": "(", "]": "[", ">": "<" };
-	for (;;) {
-		const last = s[s.length - 1];
-		if (/[.,;:'!?]/.test(last)) {
-			s = s.slice(0, -1);
-			continue;
-		}
-		const open = pairs[last];
-		if (open && s.split(last).length > s.split(open).length) {
-			s = s.slice(0, -1);
-			continue;
-		}
-		return s;
+	const balance: Record<string, number> = { ")": 0, "]": 0, ">": 0 };
+	for (const ch of candidate) {
+		if (ch in balance) balance[ch]++;
+		else if (ch === "(") balance[")"]--;
+		else if (ch === "[") balance["]"]--;
+		else if (ch === "<") balance[">"]--;
 	}
+	let end = candidate.length;
+	while (end > 0) {
+		const last = candidate[end - 1];
+		if (/[.,;:'!?]/.test(last) || (last in CLOSERS && balance[last] > 0)) {
+			if (last in CLOSERS) balance[last]--;
+			end--;
+			continue;
+		}
+		break;
+	}
+	return candidate.slice(0, end);
 }
 
 /** Work out what the user typed into the Add reference box. */

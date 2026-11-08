@@ -357,3 +357,89 @@ test("#10 control: a new URL is filed even when the lookup fails", async () => {
 	assert.ok(filed);
 	assert.ok(clip.path.startsWith("References/"));
 });
+
+// ---------------------------------------------------------------- PR #13 review
+
+test("#4 unloading while a template is being read creates nothing", async () => {
+	const { app, plugin } = await setupPlugin({ templatePath: "Templates/reference.md" });
+	const template = app.vault.addFile("Templates/reference.md", "# {{title}}\n");
+	crossref({ "10.1000/tpl": { title: "Remote Title", family: "Lovelace" } });
+	const gate = deferred();
+	let reading = false;
+	const read = app.vault.read.bind(app.vault);
+	app.vault.read = async (f: TFile) => {
+		if (f === template) {
+			reading = true;
+			await gate.promise;
+		}
+		return read(f);
+	};
+	const run = plugin.addByIdentifier("10.1000/tpl");
+	for (let i = 0; i < 50 && !reading; i++) await flush(1);
+	assert.ok(reading, "the template read started");
+	plugin.unload();
+	gate.resolve();
+	await run;
+	await flush();
+	assert.deepEqual(
+		app.vault.getMarkdownFiles().map((f) => f.path),
+		["Templates/reference.md"]
+	);
+});
+
+test("#6 a second PDF for a just-reserved note is still named from metadata", async () => {
+	const { app, inbox } = setup({ attachmentFilenameFormat: "{{author}}-{{year}}-{{title}}" });
+	crossref({ "10.1000/xyz": { title: "Fresh Paper", family: "Lovelace", year: 1843 } });
+	pdf.impl = {
+		getDocument: () => ({
+			promise: Promise.resolve({
+				numPages: 1,
+				getPage: async () => ({ getTextContent: async () => ({ items: [{ str: "doi:10.1000/xyz" }] }) }),
+				getMetadata: async () => ({ info: {} }),
+				destroy: async () => undefined,
+			}),
+		}),
+	};
+	const a = app.vault.addFile("Inbox/a.pdf", "%PDF a");
+	const b = app.vault.addFile("Inbox/b.pdf", "%PDF b");
+	const notes = await Promise.all([inbox.process(a), inbox.process(b)]);
+	assert.equal(notes[0], notes[1], "the second PDF attaches to the first note");
+	assert.deepEqual(
+		[a.path, b.path].sort(),
+		["References/attachments/Lovelace-1843-Fresh Paper 1.pdf", "References/attachments/Lovelace-1843-Fresh Paper.pdf"]
+	);
+});
+
+test("#10 an original capture URL still matches after the note took a canonical URL", async (t) => {
+	const { app, inbox } = setup();
+	const first = app.vault.addFile("Inbox/first.md", `---\n{"source":"https://example.com/original","title":"Clip"}\n---\n`);
+	http.handler = async () => ({
+		status: 200,
+		text: `<meta property="og:url" content="https://example.com/canonical"><title>Item</title>`,
+	});
+	const filed = await inbox.process(first);
+	assert.ok(filed);
+	await flush();
+	assert.equal(fm(app, first).url, "https://example.com/canonical", "mapped url is the canonical one");
+	// Let the short-lived reservation expire, so only the note's own properties can match.
+	t.mock.timers.enable({ apis: ["Date"], now: Date.now() + 60_000 });
+
+	const second = app.vault.addFile("Inbox/second.md", `---\n{"source":"https://example.com/original","title":"Again"}\n---\n`);
+	http.handler = async () => ({ status: 503, text: "" });
+	assert.equal(await inbox.process(second), null);
+	assert.equal(second.path, "Inbox/second.md");
+	assert.equal(app.vault.getMarkdownFiles().filter((f) => f.path.startsWith("References/")).length, 1);
+});
+
+test("#10 the original capture URL also matches before the cache indexes the note", async () => {
+	const { app, library } = setup();
+	const clip = app.vault.addFile("Inbox/first.md", "");
+	const canonical = book("Item", { url: "https://example.com/canonical" });
+	const found = await library.exclusive(async () => {
+		await library.complete(clip, canonical, "shelved", ["https://example.com/original"]);
+		// No macrotask has run, so the metadata cache hasn't indexed the new properties.
+		assert.equal(fm(app, clip).url, undefined);
+		return library.findExisting({ url: "https://example.com/original" });
+	});
+	assert.equal(found, clip);
+});

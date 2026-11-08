@@ -52,10 +52,16 @@ export function markdownSafeUrl(v: string | undefined): string | undefined {
 		return undefined;
 	}
 	if (u.protocol !== "http:" && u.protocol !== "https:") return undefined;
-	return u.href
+	// The authority can't be percent-encoded (IPv6 brackets are required syntax), so keep it
+	// as is, but only for ordinary host names and IP literals: WHATWG URLs also accept
+	// hosts containing backticks, parentheses and the like.
+	if (!/^([a-z0-9_-]+\.)*[a-z0-9_-]+$|^\[[0-9a-f:.]+\]$/i.test(u.hostname)) return undefined;
+	const rest = (u.pathname + u.search + u.hash)
 		// A lone % (not an escape) could start an Obsidian %% comment.
 		.replace(/%(?![0-9A-Fa-f]{2})/g, "%25")
 		.replace(/[`()[\]<>!*_|$'"{}^\\~ ]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0"));
+	// origin also drops any user:password@ part.
+	return u.origin + rest;
 }
 
 /**
@@ -89,6 +95,10 @@ export function safeFilename(name: string, maxBytes = MAX_FILENAME_BYTES): strin
 	}
 	// Trailing dots and spaces are invalid on Windows.
 	out = out.replace(/[.\s]+$/, "");
-	if (WINDOWS_RESERVED.test(out.split(".")[0])) out = `${out}_`;
+	// Windows treats NUL, NUL.tar and "NUL .tar.gz" all as the device NUL, so change the stem
+	// (everything before the first dot), not the end of the name.
+	const dot = out.indexOf(".");
+	const stem = dot === -1 ? out : out.slice(0, dot);
+	if (WINDOWS_RESERVED.test(stem.trimEnd())) out = `${stem.trimEnd()}_${out.slice(stem.length)}`;
 	return out;
 }
