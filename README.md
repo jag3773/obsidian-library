@@ -1,4 +1,4 @@
-# Reference Library for Obsidian
+# Library for Obsidian
 
 A reference manager that keeps your library in plain Markdown. Each book, article or web page is one note. Its metadata lives in properties, its PDF sits in a folder next to it, and you browse the whole collection with Obsidian Bases. If you uninstall the plugin, your library still works.
 
@@ -15,7 +15,9 @@ The plugin only fills empty properties. It never overwrites what you typed.
 
 ## Everything is a setting
 
-Folders, filename formats, citekey pattern, statuses, the note template and even the property names are configurable. If your vault uses `author` instead of `authors`, map it in settings.
+Folders, filename formats, citekey pattern, statuses and the note template are configurable. Folder and template settings suggest matching paths from your vault as you type.
+
+**Point it at your library's base.** Under **Library base**, choose the `.base` file that shows your library, or press **Create base** to make one. The plugin reads the base's folder (`file.inFolder(...)`) and the properties it uses, and matches each field it writes to one of them, by name or a common synonym (`author` for authors, `source` for url, `date` for year, and so on). Each match is a dropdown, so you only change the ones it got wrong. A field with no matching property is created under the plugin's default name.
 
 ## Metadata sources
 
@@ -27,13 +29,13 @@ Until it is in the community directory, build it from source:
 
 1. `npm install && npm run build`
 2. Copy `main.js`, `manifest.json` and `styles.css` into `<vault>/.obsidian/plugins/reference-library/`.
-3. Enable **Reference Library** in Community plugins.
+3. Enable **Library** in Community plugins.
 
-**BRAT:** BRAT installs from GitHub releases, so it works once a release is listed on the [releases page](https://github.com/jag3773/obsidian-library/releases). If none is listed yet, use the steps above. When one is: install BRAT, choose **Add beta plugin**, enter `jag3773/obsidian-library`, then enable **Reference Library**.
+**BRAT:** BRAT installs from GitHub releases, so it works once a release is listed on the [releases page](https://github.com/jag3773/obsidian-library/releases). If none is listed yet, use the steps above. When one is: install BRAT, choose **Add beta plugin**, enter `jag3773/obsidian-library`, then enable **Library**.
 
 ## Suggested Base
 
-Create `Library.base` anywhere in your vault:
+**Create base** in settings writes one like this for you, using your folder and property names. To write it by hand, create `Library.base` anywhere in your vault:
 
 ```yaml
 filters:

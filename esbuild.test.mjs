@@ -12,5 +12,7 @@ await esbuild.build({
   outdir: "test-dist",
   outExtension: { ".js": ".mjs" },
   alias: { obsidian: "./test/mocks/obsidian.ts" },
+  // Real npm packages used only by tests are loaded by Node, not bundled.
+  external: ["yaml"],
   logLevel: "warning",
 });

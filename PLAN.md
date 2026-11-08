@@ -1,4 +1,4 @@
-# Reference Library: Obsidian plugin specification
+# Library: Obsidian plugin specification
 
 A reference manager that lives entirely in an Obsidian vault. One Markdown note per source, metadata in properties, PDFs next to them, and Obsidian Bases as the library UI. MIT licensed.
 
@@ -73,7 +73,8 @@ All paths are vault-relative unless marked absolute. "Example (ekfocus)" shows t
 | Complete notes on property edit | on | on | A note in the references folder with an ISBN, DOI or URL and no citekey gets filled in and renamed |
 | URL properties in clipped notes | `url, source` | `url, source` | Where to look for the URL in Web Clipper output |
 | Crossref contact email | empty | user's choice | Sent as `mailto` for Crossref's polite pool; never filled by default |
-| Property names | logical names | same | Map of logical → real property names (section 3) |
+| Library base | empty | `Library.base` | The base that shows the library. Its `file.inFolder()` sets the references folder; its properties (and those on notes in that folder) are matched to the fields below |
+| Fields | logical names | matched from the base | Map of logical → real property names (section 3), chosen from the base's properties in dropdowns |
 
 ### 4.2 Reading round trip (stage 2)
 

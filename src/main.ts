@@ -7,14 +7,14 @@ import { lookup } from "./metadata/lookup";
 import { LibrarySettingTab, LibrarySettings, withDefaults } from "./settings";
 import { AddReferenceModal } from "./ui/AddReferenceModal";
 
-const PREFIX = "Reference Library";
+const PREFIX = "Library";
 const COMPLETE_DEBOUNCE_MS = 2000;
 const INBOX_SETTLE_MS = 750;
 const BUSY_SETTLE_MS = 1500;
 
 const sameId = (a: Identifier | null, b: Identifier | null) => !!a && !!b && a.kind === b.kind && a.value === b.value;
 
-export default class ReferenceLibraryPlugin extends Plugin {
+export default class LibraryPlugin extends Plugin {
 	settings!: LibrarySettings;
 	library!: Library;
 	inbox!: Inbox;
