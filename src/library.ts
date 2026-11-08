@@ -1,9 +1,9 @@
 import { App, TFile, TFolder, moment, normalizePath } from "obsidian";
 import { disambiguate, familyFromFullName, generateCitekey } from "./citekey";
-import { Identifier, normalizeDoi, normalizeIsbn } from "./identifiers";
+import { Identifier, canonicalIsbn, normalizeDoi, normalizeIsbn } from "./identifiers";
 import { ReferenceData } from "./metadata/types";
 import { LibrarySettings, PropertyKey } from "./settings";
-import { DEFAULT_TEMPLATE, escapeMarkdown, renderTemplate, safeFilename } from "./template";
+import { DEFAULT_TEMPLATE, escapeMarkdown, markdownSafeUrl, renderTemplate, safeFilename } from "./template";
 
 type Frontmatter = Record<string, unknown>;
 
@@ -19,23 +19,96 @@ export function unlink(v: unknown): string {
 		.trim();
 }
 
-/** An http(s) URL normalized so backticks, angle brackets and spaces are percent-encoded. */
-function safeUrl(v: string | undefined): string | undefined {
-	if (!v) return undefined;
-	try {
-		const u = new URL(v);
-		return u.protocol === "http:" || u.protocol === "https:" ? u.href : undefined;
-	} catch {
-		return undefined;
+/** Thrown when the plugin was unloaded while work was queued or in flight. */
+export class Cancelled extends Error {
+	constructor() {
+		super("Reference Library was unloaded");
+		this.name = "Cancelled";
 	}
 }
 
-/** All vault operations on reference notes. */
+/** Identity used for duplicate detection: lower-case DOI, ISBN-13, URL without a trailing slash. */
+interface Identity {
+	doi?: string;
+	isbn?: string;
+	url?: string;
+}
+
+function identityOf(data: Partial<Pick<ReferenceData, "doi" | "isbn" | "url">>): Identity {
+	return {
+		doi: data.doi ? normalizeDoi(String(data.doi))?.toLowerCase() : undefined,
+		isbn: data.isbn ? canonicalIsbn(String(data.isbn)) ?? undefined : undefined,
+		url: data.url ? String(data.url).trim().replace(/\/$/, "") || undefined : undefined,
+	};
+}
+
+function sameIdentity(a: Identity, b: Identity): boolean {
+	return (!!a.doi && a.doi === b.doi) || (!!a.isbn && a.isbn === b.isbn) || (!!a.url && a.url === b.url);
+}
+
+/**
+ * A citekey and identity claimed by a write that the metadata cache may not show yet.
+ * Kept briefly: long enough for Obsidian to index the new frontmatter.
+ */
+interface Reservation extends Identity {
+	file: TFile;
+	citekey: string;
+	until: number;
+}
+const RESERVATION_MS = 10_000;
+
+/** Values used to name an attachment; anything missing is read from the note. */
+export interface AttachmentNaming {
+	citekey?: string;
+	title?: string;
+	familyNames?: string[];
+	year?: number;
+}
+
+/**
+ * All vault operations on reference notes.
+ *
+ * Methods that choose a citekey or a path and then write (create, complete, attach,
+ * regenerateCitekey) must run inside exclusive(), together with any duplicate check
+ * they depend on, so that concurrent captures can't pick the same key or file.
+ */
 export class Library {
-	constructor(private app: App, private settings: () => LibrarySettings) {}
+	private queue: Promise<unknown> = Promise.resolve();
+	private reservations: Reservation[] = [];
+
+	constructor(
+		private app: App,
+		private settings: () => LibrarySettings,
+		private active: () => boolean = () => true
+	) {}
 
 	private get s(): LibrarySettings {
 		return this.settings();
+	}
+
+	/** Run fn after every earlier exclusive operation has finished. Refuses to start once unloaded. */
+	exclusive<T>(fn: () => Promise<T>): Promise<T> {
+		const run = this.queue.then(() => {
+			if (!this.active()) throw new Cancelled();
+			return fn();
+		});
+		this.queue = run.catch(() => undefined);
+		return run;
+	}
+
+	private liveReservations(): Reservation[] {
+		const now = Date.now();
+		this.reservations = this.reservations.filter((r) => r.until > now && this.exists(r.file));
+		return this.reservations;
+	}
+
+	private reserve(file: TFile, citekey: string, data: Partial<ReferenceData>): void {
+		this.reservations.push({ file, citekey, ...identityOf(data), until: Date.now() + RESERVATION_MS });
+	}
+
+	/** True while the TFile is still in the vault (not deleted or replaced). */
+	exists(file: TFile): boolean {
+		return this.app.vault.getAbstractFileByPath(file.path) === file;
 	}
 
 	prop(key: PropertyKey): string {
@@ -59,6 +132,12 @@ export class Library {
 		return this.app.vault.getMarkdownFiles().filter((f) => this.isReference(f));
 	}
 
+	/** The note's citekey, including one just written that the metadata cache hasn't indexed yet. */
+	citekeyOf(file: TFile): string {
+		const reserved = [...this.liveReservations()].reverse().find((r) => r.file === file);
+		return reserved?.citekey ?? String(this.frontmatter(file)[this.prop("citekey")] ?? "").trim();
+	}
+
 	/** The identifier a note carries, preferring DOI, then ISBN, then URL. */
 	identifierOf(file: TFile): Identifier | null {
 		const fm = this.frontmatter(file);
@@ -71,27 +150,31 @@ export class Library {
 		return null;
 	}
 
-	/** Find an existing reference with the same DOI, ISBN or URL. */
-	findExisting(data: Pick<ReferenceData, "doi" | "isbn" | "url">, except?: TFile): TFile | null {
-		const doi = data.doi ? normalizeDoi(data.doi)?.toLowerCase() : undefined;
-		const isbn = data.isbn;
-		const url = data.url?.replace(/\/$/, "");
+	/** Find an existing reference with the same DOI, ISBN (either form) or URL. */
+	findExisting(data: Partial<Pick<ReferenceData, "doi" | "isbn" | "url">>, except?: TFile): TFile | null {
+		const want = identityOf(data);
+		if (!want.doi && !want.isbn && !want.url) return null;
+		for (const r of this.liveReservations()) if (r.file !== except && sameIdentity(want, r)) return r.file;
 		for (const f of this.referenceFiles()) {
 			if (f === except) continue;
 			const fm = this.frontmatter(f);
-			if (doi && normalizeDoi(String(fm[this.prop("doi")] ?? ""))?.toLowerCase() === doi) return f;
-			if (isbn && normalizeIsbn(String(fm[this.prop("isbn")] ?? "")) === isbn) return f;
-			if (url && String(fm[this.prop("url")] ?? "").replace(/\/$/, "") === url) return f;
+			const have = identityOf({
+				doi: fm[this.prop("doi")] as string | undefined,
+				isbn: fm[this.prop("isbn")] as string | undefined,
+				url: fm[this.prop("url")] as string | undefined,
+			});
+			if (sameIdentity(want, have)) return f;
 		}
 		return null;
 	}
 
 	citekeyTaken(key: string, except?: TFile): boolean {
 		const lower = key.toLowerCase();
+		for (const r of this.liveReservations()) if (r.file !== except && r.citekey.toLowerCase() === lower) return true;
 		for (const f of this.referenceFiles()) {
 			if (f === except) continue;
 			if (f.basename.toLowerCase() === lower) return true;
-			if (String(this.frontmatter(f)[this.prop("citekey")] ?? "").toLowerCase() === lower) return true;
+			if (String(this.frontmatter(f)[this.prop("citekey")] ?? "").trim().toLowerCase() === lower) return true;
 		}
 		return false;
 	}
@@ -101,7 +184,7 @@ export class Library {
 		return disambiguate(key, (k) => this.citekeyTaken(k, except));
 	}
 
-	/** Citekey inputs from a note's existing properties (for regeneration). */
+	/** Citekey inputs from a note's existing properties (for regeneration and attachment names). */
 	keyInputsFromNote(file: TFile): Pick<ReferenceData, "title" | "familyNames" | "year"> {
 		const fm = this.frontmatter(file);
 		const raw = fm[this.prop("authors")];
@@ -120,7 +203,7 @@ export class Library {
 			.replace(/\{\{title\}\}/g, () => data.title ?? "")
 			.replace(/\{\{year\}\}/g, () => (data.year ? String(data.year) : ""))
 			.replace(/\{\{author\}\}/g, () => data.familyNames?.[0] ?? "");
-		return safeFilename(name) || citekey;
+		return safeFilename(name) || safeFilename(citekey) || "untitled";
 	}
 
 	/** Properties derived from looked-up data, keyed by real property names. */
@@ -171,7 +254,7 @@ export class Library {
 			year: data.year,
 			publisher: e(data.publisher),
 			journal: e(data.journal),
-			url: safeUrl(data.url),
+			url: markdownSafeUrl(data.url),
 			doi: e(data.doi),
 			isbn: e(data.isbn),
 			abstract: e(data.abstract),
@@ -206,13 +289,15 @@ export class Library {
 		return file;
 	}
 
-	/** Create a new reference note from looked-up data. */
+	/** Create a new reference note from looked-up data. Call inside exclusive(). */
 	async create(data: ReferenceData, status: string): Promise<TFile> {
 		const citekey = this.makeCitekey(data);
 		const folder = this.s.referencesFolder;
 		await this.ensureFolder(folder);
+		const body = await this.renderBody(data, citekey);
 		const path = this.freePath(folder, this.formatName(this.s.filenameFormat, citekey, data), "md");
-		const file = await this.app.vault.create(path, await this.renderBody(data, citekey));
+		const file = await this.app.vault.create(path, body);
+		this.reserve(file, citekey, data);
 		await this.fillProperties(file, this.propertiesFor(data, citekey, status));
 		return file;
 	}
@@ -220,6 +305,7 @@ export class Library {
 	/**
 	 * Fill an existing note from looked-up data, give it a citekey if it lacks one,
 	 * and move it into the references folder under the configured filename.
+	 * Call inside exclusive().
 	 */
 	async complete(file: TFile, data: ReferenceData | null, status?: string): Promise<TFile> {
 		const fm = this.frontmatter(file);
@@ -232,32 +318,55 @@ export class Library {
 			source: "note",
 		};
 		const citekey = existingKey || this.makeCitekey(basis, file);
+		this.reserve(file, citekey, basis);
 		await this.fillProperties(file, this.propertiesFor(basis, citekey, isEmpty(fm[this.prop("status")]) ? status : undefined));
 		// Notes already inside the references folder keep their subfolder.
 		const folder = this.isReference(file) ? file.parent?.path ?? this.s.referencesFolder : this.s.referencesFolder;
 		return this.moveTo(file, folder, this.formatName(this.s.filenameFormat, citekey, basis));
 	}
 
-	/** File an attachment under the configured name and link it from the note. */
-	async attach(note: TFile, attachment: TFile): Promise<void> {
-		const fm = this.frontmatter(note);
-		const citekey = String(fm[this.prop("citekey")] ?? note.basename);
-		const base = this.formatName(this.s.attachmentFilenameFormat, citekey, { title: String(fm[this.prop("title")] ?? "") });
-		await this.moveTo(attachment, this.s.attachmentsFolder, base);
-		const link = `[[${attachment.name}]]`;
+	/** A link from note to target that resolves to target even when its basename isn't unique. */
+	linkTo(target: TFile, note: TFile): string {
+		return `[[${this.app.metadataCache.fileToLinktext(target, note.path, false)}]]`;
+	}
+
+	/** True if a link-ish property value resolves to target from note. */
+	private linksTo(value: unknown, target: TFile, note: TFile): boolean {
+		const linkpath = unlink(value);
+		return !!linkpath && this.app.metadataCache.getFirstLinkpathDest(linkpath, note.path) === target;
+	}
+
+	/**
+	 * File an attachment under the configured name and link it from the note.
+	 * Pass `known` for values the metadata cache may not have indexed yet (a just-created note).
+	 * Call inside exclusive().
+	 */
+	async attach(note: TFile, attachment: TFile, known: AttachmentNaming = {}): Promise<void> {
+		const fromNote = this.keyInputsFromNote(note);
+		const citekey = known.citekey || this.citekeyOf(note) || note.basename;
+		const naming: Partial<ReferenceData> = {
+			title: known.title || this.frontmatter(note)[this.prop("title")]?.toString() || "",
+			familyNames: known.familyNames?.length ? known.familyNames : fromNote.familyNames,
+			year: known.year ?? fromNote.year,
+		};
+		await this.moveTo(attachment, this.s.attachmentsFolder, this.formatName(this.s.attachmentFilenameFormat, citekey, naming));
+		const link = this.linkTo(attachment, note);
 		await this.app.fileManager.processFrontMatter(note, (f: Frontmatter) => {
-			if (attachment.extension === "pdf" && isEmpty(f[this.prop("pdf")])) f[this.prop("pdf")] = link;
-			const current = f[this.prop("attachments")];
+			const pdfKey = this.prop("pdf");
+			if (attachment.extension === "pdf" && isEmpty(f[pdfKey])) f[pdfKey] = link;
+			const listKey = this.prop("attachments");
+			const current = f[listKey];
 			// Keep a single existing value rather than replacing it.
 			const list: unknown[] = Array.isArray(current) ? current : isEmpty(current) ? [] : [current];
-			if (!list.includes(link)) f[this.prop("attachments")] = [...list, link];
+			if (!list.some((v) => this.linksTo(v, attachment, note))) f[listKey] = [...list, link];
 		});
 	}
 
-	/** Recompute the citekey from the note's own properties, then rename. */
+	/** Recompute the citekey from the note's own properties, then rename. Call inside exclusive(). */
 	async regenerateCitekey(file: TFile): Promise<string> {
 		const inputs = this.keyInputsFromNote(file);
 		const key = this.makeCitekey(inputs, file);
+		this.reserve(file, key, {});
 		await this.app.fileManager.processFrontMatter(file, (f: Frontmatter) => {
 			f[this.prop("citekey")] = key;
 		});
