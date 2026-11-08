@@ -17,7 +17,7 @@ The plugin only fills empty properties. It never overwrites what you typed.
 
 Folders, filename formats, citekey pattern, statuses and the note template are configurable. Folder and template settings suggest matching paths from your vault as you type.
 
-**Point it at your library's base.** Under **Library base**, choose the `.base` file that shows your library, or press **Create base** to make one. The plugin reads the base's folder (`file.inFolder(...)`) and the properties it uses, and matches each field it writes to one of them, by name or a common synonym (`author` for authors, `source` for url, `date` for year, and so on). Each match is a dropdown, so you only change the ones it got wrong. A field with no matching property is created under the plugin's default name.
+**Point it at your library's base.** Under **Library base**, choose the `.base` file that shows your library, or press **Create base** to make one. The plugin reads the folder the base requires (a `file.inFolder(...)` filter every note must match; negated or either/or folders are ignored) and the properties it uses, and matches each field it writes to one of them, by name or a common synonym (`author` for authors, `source` for url, `date` for year, and so on). Each match is a dropdown, so you only change the ones it got wrong. A field with no matching property is created under the plugin's default name. **Create base** keeps your current mapping, and records each field's name in the base so **Re-read** recovers it.
 
 ## Metadata sources
 

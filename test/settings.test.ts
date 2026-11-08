@@ -146,3 +146,106 @@ test("a custom attachments folder outside the references folder is left alone", 
 	assert.equal(plugin.settings.attachmentsFolder, "Files/PDFs");
 	plugin.unload();
 });
+
+// ---------------------------------------------------------------- PR #14 review
+
+test("a base that excludes a folder doesn't make it the destination", async () => {
+	const { app, plugin, tab } = await setup();
+	app.vault.addFile("Lib.base", `filters:\n  not:\n    - file.inFolder("Archive")\nviews:\n  - type: table\n    order: [note.author]\n`);
+	await (tab as any).useBase("Lib.base");
+	assert.equal(plugin.settings.referencesFolder, "References");
+	assert.equal(plugin.settings.attachmentsFolder, "References/attachments");
+	const file = await plugin.library.exclusive(() =>
+		plugin.library.create({ type: "book", title: "Sample", authors: [], familyNames: [], source: "t" }, "queued")
+	);
+	assert.ok(!file.path.startsWith("Archive/"), file.path);
+	plugin.unload();
+});
+
+test("a folder with an apostrophe is adopted end to end", async () => {
+	const { app, plugin, tab } = await setup();
+	app.vault.addFile("Lib.base", `filters: file.inFolder("Reader's Library")\n`);
+	await (tab as any).useBase("Lib.base");
+	assert.equal(plugin.settings.referencesFolder, "Reader's Library");
+	const file = await plugin.library.exclusive(() =>
+		plugin.library.create({ type: "book", title: "Sample", authors: [], familyNames: [], source: "t" }, "queued")
+	);
+	assert.ok(file.path.startsWith("Reader's Library/"), file.path);
+	plugin.unload();
+});
+
+test("Create base keeps custom mappings, and new references use them", async () => {
+	const { app, plugin, tab } = await setup();
+	Object.assign(plugin.settings.propertyNames, { title: "name", url: "source", doi: "digitalId", publisher: "imprint" });
+	const before = { ...plugin.settings.propertyNames };
+	await (tab as any).createBase();
+	assert.deepEqual(plugin.settings.propertyNames, before);
+	const note = await plugin.library.exclusive(() =>
+		plugin.library.create({ type: "article", title: "Fresh", authors: [], familyNames: [], doi: "10.1/x", url: "https://e.example/", publisher: "P", source: "t" }, "queued")
+	);
+	await new Promise((r) => setImmediate(r));
+	const fm = app.metadataCache.getFileCache(note)?.frontmatter ?? {};
+	assert.equal(fm.name, "Fresh");
+	assert.equal(fm.title, undefined);
+	assert.equal(fm.source, "https://e.example/");
+	assert.equal(fm.digitalId, "10.1/x");
+	// Re-read recovers the same mapping from the generated base.
+	await (tab as any).useBase(plugin.settings.libraryBase);
+	assert.deepEqual(plugin.settings.propertyNames, before);
+	plugin.unload();
+});
+
+test("wrong-shaped bases report an error and keep mappings and folders", async () => {
+	const { app, plugin, tab } = await setup();
+	plugin.settings.propertyNames.authors = "creator";
+	// Everything except libraryBase (which names the file the error is about) stays the same.
+	const snapshot = () => JSON.stringify({ ...plugin.settings, libraryBase: undefined });
+	const before = snapshot();
+	for (const [name, body, reason] of [
+		["Views.base", "views: {}\n", /views must be a list/],
+		["Scalar.base", "not a Base\n", /isn't a Base/],
+		["Filters.base", "filters:\n  maybe: []\n", /exactly one of/],
+	] as const) {
+		app.vault.addFile(name, body);
+		assert.match((await tab.readBase(name)).error ?? "", reason);
+		await (tab as any).useBase(name);
+		assert.equal(snapshot(), before, name);
+	}
+	plugin.unload();
+});
+
+test("a base read that finishes after a newer selection is discarded", async () => {
+	const { app, plugin, tab } = await setup();
+	const a = app.vault.addFile("A.base", `filters: file.inFolder("FolderA")\nviews:\n  - type: table\n    order: [note.writer]\n`);
+	app.vault.addFile("FolderA/n.md", `---\n{"writer":"x"}\n---\n`);
+	app.vault.addFile("B.base", `filters: file.inFolder("FolderB")\nviews:\n  - type: table\n    order: [note.author]\n`);
+	let release!: () => void;
+	const gate = new Promise<void>((r) => (release = r));
+	const read = app.vault.read.bind(app.vault);
+	app.vault.read = async (f: any) => {
+		if (f === a) await gate;
+		return read(f);
+	};
+	const first = (tab as any).useBase("A.base");
+	await (tab as any).useBase("B.base");
+	release();
+	await first;
+	const s = plugin.settings;
+	assert.equal(s.libraryBase, "B.base");
+	assert.equal(s.referencesFolder, "FolderB");
+	assert.equal(s.propertyNames.authors, "author");
+	assert.equal((plugin as any).data.referencesFolder, "FolderB", "saved settings match too");
+	plugin.unload();
+});
+
+test("adopting a base with keepMappings changes the folder but not the fields", async () => {
+	const { app, plugin, tab } = await setup();
+	plugin.settings.propertyNames.authors = "creator";
+	app.vault.addFile("Other.base", `filters: file.inFolder("Elsewhere")\nviews:\n  - type: table\n    order: [note.author, note.date]\n`);
+	await (tab as any).useBase("Other.base", true);
+	assert.equal(plugin.settings.referencesFolder, "Elsewhere");
+	assert.equal(plugin.settings.propertyNames.authors, "creator");
+	await (tab as any).useBase("Other.base");
+	assert.equal(plugin.settings.propertyNames.authors, "author", "a normal adoption re-matches");
+	plugin.unload();
+});

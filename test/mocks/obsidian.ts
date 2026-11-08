@@ -4,7 +4,7 @@
 // like Obsidian's, so tests see the same "written but not yet indexed" window.
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { parse as parseYamlText } from "yaml";
+import { parse as parseYamlText, stringify as stringifyYamlText } from "yaml";
 (globalThis as any).window ??= globalThis;
 
 type Handler = (...args: any[]) => void;
@@ -63,6 +63,10 @@ const FM_RE = /^---\n([\s\S]*?)\n---\n?/;
 export function getFrontMatterInfo(content: string) {
 	const m = content.match(FM_RE);
 	return { exists: !!m, frontmatter: m ? m[1] : "", contentStart: m ? m[0].length : 0 };
+}
+
+export function stringifyYaml(obj: unknown): string {
+	return stringifyYamlText(obj);
 }
 
 export function parseYaml(text: string): any {

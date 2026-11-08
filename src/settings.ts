@@ -1,10 +1,10 @@
-import { App, PluginSettingTab, Setting, TFile, normalizePath, parseYaml } from "obsidian";
-import { BaseConfig, baseFolders, basePropertyNames, matchProperties, starterBase } from "./bases";
+import { App, PluginSettingTab, Setting, TFile, normalizePath, parseYaml, stringifyYaml } from "obsidian";
+import { BaseConfig, baseDisplayNames, baseFolder, basePropertyNames, matchProperties, starterBase, validateBase } from "./bases";
 import { parsePattern } from "./citekey";
 import type LibraryPlugin from "./main";
 import { PathSuggest, filePaths, folderPaths } from "./ui/PathSuggest";
 
-import { PROPERTY_KEYS, PropertyKey } from "./properties";
+import { FIELD_LABELS, PROPERTY_KEYS, PropertyKey } from "./properties";
 
 export { PROPERTY_KEYS };
 export type { PropertyKey };
@@ -92,24 +92,10 @@ interface BaseReading {
 	error?: string;
 	/** Property names, base-declared first, then ones found on notes in the base's folder. */
 	properties: string[];
+	/** Display names the base gives properties, used to recover a starter base's mapping. */
+	displayNames: Record<string, string>;
 }
 
-const LABELS: Record<PropertyKey, string> = {
-	citekey: "Citekey",
-	type: "Type",
-	title: "Title",
-	authors: "Authors",
-	year: "Year",
-	publisher: "Publisher",
-	journal: "Journal or site",
-	isbn: "ISBN",
-	doi: "DOI",
-	url: "URL",
-	status: "Reading status",
-	pdf: "PDF",
-	attachments: "Attachments",
-	added: "Date added",
-};
 
 export class LibrarySettingTab extends PluginSettingTab {
 	constructor(app: App, private plugin: LibraryPlugin) {
@@ -122,47 +108,60 @@ export class LibrarySettingTab extends PluginSettingTab {
 		return f instanceof TFile && f.extension === "base" ? f : null;
 	}
 
+	/** Incremented by every base selection; a read that finishes after a newer one is discarded. */
+	private baseRequest = 0;
+
 	/** Read the base and collect the properties it and the notes in its folder use. */
 	async readBase(path: string): Promise<BaseReading> {
+		const none = { properties: [], displayNames: {} };
 		const file = this.baseFile(path);
-		if (!file) return { error: path.trim() ? `No base at ${path}.` : undefined, properties: [] };
-		let config: BaseConfig;
+		if (!file) return { ...none, error: path.trim() ? `No base at ${path}.` : undefined };
+		let parsed: unknown;
 		try {
-			const parsed = parseYaml(await this.app.vault.read(file));
-			config = parsed && typeof parsed === "object" ? (parsed as BaseConfig) : {};
+			parsed = parseYaml(await this.app.vault.read(file));
 		} catch (e) {
-			return { error: `Couldn't read ${file.path}: ${e instanceof Error ? e.message : String(e)}`, properties: [] };
+			return { ...none, error: `Couldn't read ${file.path}: ${e instanceof Error ? e.message : String(e)}` };
 		}
+		const invalid = validateBase(parsed);
+		if (invalid) return { ...none, error: `Couldn't use ${file.path}: ${invalid}.` };
+		const config = parsed as BaseConfig;
 		const names = basePropertyNames(config);
-		const folders = baseFolders(config);
-		const inFolders = (p: string) => !folders.length || folders.some((f) => p.startsWith(normalizePath(f) + "/"));
+		const folder = baseFolder(config);
 		const counts = new Map<string, number>();
-		for (const f of this.app.vault.getMarkdownFiles()) {
-			if (!inFolders(f.path)) continue;
-			const fm = this.app.metadataCache.getFileCache(f)?.frontmatter ?? {};
-			for (const k of Object.keys(fm)) if (k !== "position") counts.set(k, (counts.get(k) ?? 0) + 1);
+		// Properties on notes the base covers (its required folder), to offer alongside its own.
+		if (folder) {
+			for (const f of this.app.vault.getMarkdownFiles()) {
+				if (!f.path.startsWith(folder + "/")) continue;
+				const fm = this.app.metadataCache.getFileCache(f)?.frontmatter ?? {};
+				for (const k of Object.keys(fm)) if (k !== "position") counts.set(k, (counts.get(k) ?? 0) + 1);
+			}
 		}
 		const fromNotes = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k).filter((k) => !names.includes(k));
-		return { config, properties: [...names, ...fromNotes] };
+		return { config, properties: [...names, ...fromNotes], displayNames: baseDisplayNames(config) };
 	}
 
-	/** Adopt a base: its single inFolder() becomes the references folder, and fields are re-matched. */
-	private async useBase(path: string): Promise<void> {
+	/**
+	 * Adopt a base. The folder it requires (if exactly one) becomes the references folder, and
+	 * fields are re-matched to its properties, unless keepMappings (a base just generated from
+	 * the current mapping). Nothing changes if the base can't be read or offers nothing to match.
+	 */
+	private async useBase(path: string, keepMappings = false): Promise<void> {
 		const s = this.plugin.settings;
-		s.libraryBase = path;
+		const request = ++this.baseRequest;
 		const reading = await this.readBase(path);
-		if (reading.config) {
-			const folders = baseFolders(reading.config);
-			if (folders.length === 1 && normalizePath(folders[0]) !== "/") {
-				const from = normalizePath(s.referencesFolder);
-				const to = normalizePath(folders[0]);
-				s.referencesFolder = to;
-				// An attachments folder inside the old references folder moves with it
-				// (References/attachments -> <base folder>/attachments); one elsewhere is kept.
-				const att = normalizePath(s.attachmentsFolder);
-				if (from !== to && (att === from || att.startsWith(from + "/"))) s.attachmentsFolder = to + att.slice(from.length);
-			}
-			s.propertyNames = matchProperties(reading.properties);
+		if (request !== this.baseRequest) return; // superseded by a newer selection
+		s.libraryBase = path;
+		const folder = reading.config ? baseFolder(reading.config) : null;
+		if (folder) {
+			const from = normalizePath(s.referencesFolder);
+			s.referencesFolder = folder;
+			// An attachments folder inside the old references folder moves with it
+			// (References/attachments -> <base folder>/attachments); one elsewhere is kept.
+			const att = normalizePath(s.attachmentsFolder);
+			if (from !== folder && (att === from || att.startsWith(from + "/"))) s.attachmentsFolder = folder + att.slice(from.length);
+		}
+		if (reading.config && !keepMappings && reading.properties.length) {
+			s.propertyNames = matchProperties(reading.properties, reading.displayNames);
 		}
 		await this.plugin.saveSettings();
 		this.display();
@@ -172,8 +171,8 @@ export class LibrarySettingTab extends PluginSettingTab {
 		const s = this.plugin.settings;
 		let path = "Library.base";
 		for (let i = 1; this.app.vault.getAbstractFileByPath(path); i++) path = `Library ${i}.base`;
-		await this.app.vault.create(path, starterBase(s.referencesFolder, s.propertyNames));
-		await this.useBase(path);
+		await this.app.vault.create(path, stringifyYaml(starterBase(s.referencesFolder, s.propertyNames)));
+		await this.useBase(path, true);
 	}
 
 	display(): void {
@@ -294,6 +293,7 @@ export class LibrarySettingTab extends PluginSettingTab {
 						// Adopt the base once the path names one; until then just remember what's typed.
 						if (this.baseFile(value)) await this.useBase(value);
 						else {
+							this.baseRequest++; // a pending read for an earlier path is now stale
 							s.libraryBase = value;
 							await this.plugin.saveSettings();
 						}
@@ -324,7 +324,7 @@ export class LibrarySettingTab extends PluginSettingTab {
 		for (const key of PROPERTY_KEYS) {
 			const current = s.propertyNames[key] || key;
 			const options = [...new Set([current, ...reading.properties, key])];
-			new Setting(el).setName(LABELS[key]).addDropdown((d) => {
+			new Setting(el).setName(FIELD_LABELS[key]).addDropdown((d) => {
 				for (const o of options) d.addOption(o, reading.config && o === key && !reading.properties.includes(o) ? `${o} (new)` : o);
 				d.setValue(current).onChange(async (v) => {
 					s.propertyNames[key] = v || key;
