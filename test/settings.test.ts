@@ -10,7 +10,7 @@ import { PathSuggest, filePaths, folderPaths } from "../src/ui/PathSuggest";
 
 async function setup() {
 	const app = new App();
-	const plugin = new LibraryPlugin(app as any, { id: "reference-library" } as any);
+	const plugin = new LibraryPlugin(app as any, { id: "library" } as any);
 	await plugin.onload();
 	const tab = new LibrarySettingTab(app as any, plugin);
 	let rendered = 0;
@@ -102,5 +102,47 @@ test("Create base writes a starter base over the references folder and adopts it
 	assert.ok(created);
 	assert.match(await app.vault.read(created as any), /file\.inFolder\("Sources"\)/);
 	assert.equal(plugin.settings.referencesFolder, "Sources");
+	plugin.unload();
+});
+
+test("after adopting a base, an inbox PDF lands in the base's folder with its attachment", async () => {
+	const { app, plugin, tab } = await setup();
+	plugin.settings.inboxFolder = "resources/inbox";
+	app.vault.addFile(
+		"resources/Library.base",
+		`filters:\n  and:\n    - file.inFolder("resources/zotero")\n    - file.ext == "md"\n    - file.hasProperty("citekey")\nviews:\n  - type: table\n    order: [authors, year, status, added]\n`
+	);
+	app.vault.addFile("resources/zotero/existing.md", `---\n{"citekey":"existing","authors":["[[A]]"],"year":2019,"status":"shelved"}\n---\n`);
+	await (tab as any).useBase("resources/Library.base");
+	assert.equal(plugin.settings.referencesFolder, "resources/zotero");
+	assert.equal(plugin.settings.attachmentsFolder, "resources/zotero/attachments", "attachments move with the references folder");
+
+	const { pdf } = await import("obsidian");
+	(pdf as any).impl = {
+		getDocument: () => ({
+			promise: Promise.resolve({
+				numPages: 1,
+				getPage: async () => ({ getTextContent: async () => ({ items: [{ str: "no identifiers here" }] }) }),
+				getMetadata: async () => ({ info: { Title: "Redeemed Personal Agency" } }),
+				destroy: async () => undefined,
+			}),
+		}),
+	};
+	const file = app.vault.addFile("resources/inbox/scan.pdf", "%PDF");
+	const note = await plugin.inbox.process(file);
+	assert.ok(note);
+	assert.ok(note.path.startsWith("resources/zotero/"), note.path);
+	assert.ok(file.path.startsWith("resources/zotero/attachments/"), file.path);
+	assert.ok(!app.vault.getAbstractFileByPath("References"), "nothing is created under the old default folder");
+	plugin.unload();
+});
+
+test("a custom attachments folder outside the references folder is left alone", async () => {
+	const { app, plugin, tab } = await setup();
+	plugin.settings.attachmentsFolder = "Files/PDFs";
+	app.vault.addFile("Lib.base", `filters: 'file.inFolder("Sources")'\n`);
+	await (tab as any).useBase("Lib.base");
+	assert.equal(plugin.settings.referencesFolder, "Sources");
+	assert.equal(plugin.settings.attachmentsFolder, "Files/PDFs");
 	plugin.unload();
 });

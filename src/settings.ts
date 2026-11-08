@@ -153,7 +153,15 @@ export class LibrarySettingTab extends PluginSettingTab {
 		const reading = await this.readBase(path);
 		if (reading.config) {
 			const folders = baseFolders(reading.config);
-			if (folders.length === 1 && normalizePath(folders[0]) !== "/") s.referencesFolder = normalizePath(folders[0]);
+			if (folders.length === 1 && normalizePath(folders[0]) !== "/") {
+				const from = normalizePath(s.referencesFolder);
+				const to = normalizePath(folders[0]);
+				s.referencesFolder = to;
+				// An attachments folder inside the old references folder moves with it
+				// (References/attachments -> <base folder>/attachments); one elsewhere is kept.
+				const att = normalizePath(s.attachmentsFolder);
+				if (from !== to && (att === from || att.startsWith(from + "/"))) s.attachmentsFolder = to + att.slice(from.length);
+			}
 			s.propertyNames = matchProperties(reading.properties);
 		}
 		await this.plugin.saveSettings();
@@ -226,11 +234,11 @@ export class LibrarySettingTab extends PluginSettingTab {
 				t.setValue(s.citekeyPattern).onChange(async (v) => {
 					try {
 						parsePattern(v);
-						t.inputEl.removeClass("reference-library-invalid");
+						t.inputEl.removeClass("library-invalid");
 						s.citekeyPattern = v.trim();
 						await save();
 					} catch {
-						t.inputEl.addClass("reference-library-invalid");
+						t.inputEl.addClass("library-invalid");
 					}
 				})
 			);

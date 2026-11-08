@@ -82,7 +82,7 @@ export class Inbox {
 			const id = findIdentifierInText(pdf.text);
 			if (id) data = await lookup(this.fetch, id, { crossrefMailto: s.crossrefMailto });
 		} catch (e) {
-			console.warn("[reference-library] could not read PDF", file.path, e);
+			console.warn("[library] could not read PDF", file.path, e);
 		}
 		if (!data) {
 			const authors = pdfAuthor ? pdfAuthor.split(/\s*(?:;|,| and )\s*/).filter(Boolean) : [];

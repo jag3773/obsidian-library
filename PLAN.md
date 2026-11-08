@@ -197,7 +197,7 @@ The plugin sends identifiers (ISBN, DOI, arXiv ID, URL) to the public services i
 - MIT license, `LICENSE` in the repo root.
 - Build with esbuild, as in the Obsidian sample plugin. Release assets: `main.js`, `manifest.json`, `styles.css`.
 - Beta distribution through BRAT from a GitHub repo, then submission to the community directory after stage 2.
-- Plugin id `reference-library` is provisional; check the community list for clashes before submitting.
+- Plugin id `library` is provisional; check the community list for clashes before submitting.
 
 ## 9. Open questions
 

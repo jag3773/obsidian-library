@@ -28,7 +28,7 @@ Open Library and Google Books (ISBN), Crossref and doi.org (DOI), arXiv, and a w
 Until it is in the community directory, build it from source:
 
 1. `npm install && npm run build`
-2. Copy `main.js`, `manifest.json` and `styles.css` into `<vault>/.obsidian/plugins/reference-library/`.
+2. Copy `main.js`, `manifest.json` and `styles.css` into `<vault>/.obsidian/plugins/library/`.
 3. Enable **Library** in Community plugins.
 
 **BRAT:** BRAT installs from GitHub releases, so it works once a release is listed on the [releases page](https://github.com/jag3773/obsidian-library/releases). If none is listed yet, use the steps above. When one is: install BRAT, choose **Add beta plugin**, enter `jag3773/obsidian-library`, then enable **Library**.
