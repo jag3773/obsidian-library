@@ -138,7 +138,11 @@ export default class ReferenceLibraryPlugin extends Plugin {
 	private onCreate(f: TAbstractFile): void {
 		if (!(f instanceof TFile) || !this.settings.processInboxAutomatically || !this.inbox.accepts(f)) return;
 		// Give the writer (Web Clipper, Finder copy, sync) a moment to finish.
-		window.setTimeout(() => void this.guard(f, () => this.inbox.process(f)), INBOX_SETTLE_MS);
+		window.setTimeout(() => {
+			// The file may have been moved or deleted while it settled.
+			if (this.app.vault.getAbstractFileByPath(f.path) !== f || !this.inbox.accepts(f)) return;
+			void this.guard(f, () => this.inbox.process(f));
+		}, INBOX_SETTLE_MS);
 	}
 
 	private async processWholeInbox(): Promise<void> {

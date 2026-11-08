@@ -70,7 +70,7 @@ export function parseCsl(work: CslWork | null, doi: string, source: string): Ref
 		abstract: stripTags(work.abstract),
 		isbn: work.ISBN?.[0]?.replace(/-/g, ""),
 		doi: work.DOI ?? doi,
-		url: work.URL,
+		url: work.URL && /^https?:\/\//i.test(work.URL) ? work.URL : undefined,
 		source,
 	};
 }

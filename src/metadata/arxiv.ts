@@ -1,18 +1,22 @@
 import { familyFromFullName } from "../citekey";
 import { Fetcher } from "./http";
-import { ReferenceData, yearFrom } from "./types";
+import { ReferenceData, stripTags, yearFrom } from "./types";
 
+function rawTag(xml: string, name: string): string | undefined {
+	return xml.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`))?.[1];
+}
+
+/** Text content of a leaf element; stripTags also decodes XML entities such as &amp;. */
 function tag(xml: string, name: string): string | undefined {
-	const m = xml.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`));
-	return m ? m[1].replace(/\s+/g, " ").trim() : undefined;
+	return stripTags(rawTag(xml, name));
 }
 
 export function parseArxiv(xml: string, id: string): ReferenceData | null {
-	const entry = tag(xml, "entry");
+	const entry = rawTag(xml, "entry");
 	if (!entry) return null;
 	const title = tag(entry, "title");
 	if (!title || /^Error$/i.test(title)) return null;
-	const authors = [...entry.matchAll(/<author>\s*<name>([\s\S]*?)<\/name>/g)].map((m) => m[1].trim());
+	const authors = [...entry.matchAll(/<author>\s*<name>([\s\S]*?)<\/name>/g)].map((m) => stripTags(m[1]) ?? "").filter(Boolean);
 	const doi = tag(entry, "arxiv:doi");
 	return {
 		type: "paper",

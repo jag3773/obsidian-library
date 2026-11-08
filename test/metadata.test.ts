@@ -93,3 +93,32 @@ test("Highwire tags make it an article and expose the DOI", () => {
 	assert.deepEqual(r.authors, ["Jane Smith"]);
 	assert.equal(r.doi, "10.1234/abc");
 });
+
+test("og:url is only used when it is an absolute http(s) URL", () => {
+	const evil = parseWebpage(`<meta property="og:url" content="javascript:alert(1)">`, "https://example.com/a");
+	assert.equal(evil.url, "https://example.com/a");
+	const ok = parseWebpage(`<meta property="og:url" content="https://example.com/canonical">`, "https://example.com/a?x=1");
+	assert.equal(ok.url, "https://example.com/canonical");
+});
+
+test("numeric entities decode, and out-of-range ones don't throw", () => {
+	const r = parseWebpage(`<meta name="description" content="it&#x27;s &#8212; ok &#99999999;">`, "https://example.com");
+	assert.equal(r.abstract, "it's — ok &#99999999;");
+});
+
+test("data-name attributes are not mistaken for name", () => {
+	const r = parseWebpage(`<meta data-name="author" name="description" content="D">`, "https://example.com");
+	assert.equal(r.abstract, "D");
+	assert.deepEqual(r.authors, []);
+});
+
+test("arXiv entities are decoded", () => {
+	const r = parseArxiv(`<entry><title>Cats &amp; Dogs</title><author><name>A &amp; B</name></author></entry>`, "2301.00001");
+	assert.equal(r?.title, "Cats & Dogs");
+	assert.deepEqual(r?.authors, ["A & B"]);
+});
+
+test("Crossref URLs must be http(s)", () => {
+	const r = parseCsl({ title: "T", URL: "javascript:alert(1)" }, "10.1/x", "Crossref");
+	assert.equal(r?.url, undefined);
+});

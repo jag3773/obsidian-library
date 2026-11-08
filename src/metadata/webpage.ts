@@ -18,12 +18,27 @@ export function readMeta(html: string): Map<string, string[]> {
 }
 
 function attr(tagText: string, name: string): string | undefined {
-	const m = tagText.match(new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i"));
+	// Require whitespace before the attribute so "data-name" doesn't match "name".
+	const m = tagText.match(new RegExp(`\\s${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i"));
 	return m ? m[1] ?? m[2] ?? m[3] : undefined;
 }
 
 function decode(s: string): string {
-	return (stripTags(s) ?? "").replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)));
+	return (stripTags(s) ?? "").replace(/&#(x[0-9a-f]+|\d+);/gi, (whole, n: string) => {
+		const code = n[0] === "x" || n[0] === "X" ? parseInt(n.slice(1), 16) : Number(n);
+		// fromCodePoint throws on out-of-range values, which a hostile page could supply.
+		return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
+	});
+}
+
+function httpUrl(v: string | undefined): string | undefined {
+	if (!v || !/^https?:\/\//i.test(v)) return undefined;
+	try {
+		new URL(v);
+		return v;
+	} catch {
+		return undefined;
+	}
 }
 
 const VIDEO_HOSTS = /(^|\.)(youtube\.com|youtu\.be|vimeo\.com)$/i;
@@ -70,7 +85,8 @@ export function parseWebpage(html: string, url: string): ReferenceData {
 		journal: one("citation_journal_title", "og:site_name", "application-name"),
 		publisher: one("citation_publisher", "dc.publisher"),
 		doi: one("citation_doi", "dc.identifier")?.replace(/^doi:\s*/i, "").match(/^10\.\S+/)?.[0],
-		url: one("og:url") && !/^\//.test(one("og:url") as string) ? (one("og:url") as string) : url,
+		// Only trust og:url when it is an absolute http(s) URL; never a javascript: or data: link.
+		url: httpUrl(one("og:url")) ?? url,
 		abstract: one("citation_abstract", "description", "og:description", "dc.description"),
 		source: "web page",
 	};

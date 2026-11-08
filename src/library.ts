@@ -3,7 +3,7 @@ import { disambiguate, familyFromFullName, generateCitekey } from "./citekey";
 import { Identifier, normalizeDoi, normalizeIsbn } from "./identifiers";
 import { ReferenceData } from "./metadata/types";
 import { LibrarySettings, PropertyKey } from "./settings";
-import { DEFAULT_TEMPLATE, renderTemplate, safeFilename } from "./template";
+import { DEFAULT_TEMPLATE, escapeMarkdown, renderTemplate, safeFilename } from "./template";
 
 type Frontmatter = Record<string, unknown>;
 
@@ -17,6 +17,17 @@ export function unlink(v: unknown): string {
 		.replace(/\]\]$/, "")
 		.split("|")[0]
 		.trim();
+}
+
+/** An http(s) URL normalized so backticks, angle brackets and spaces are percent-encoded. */
+function safeUrl(v: string | undefined): string | undefined {
+	if (!v) return undefined;
+	try {
+		const u = new URL(v);
+		return u.protocol === "http:" || u.protocol === "https:" ? u.href : undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 /** All vault operations on reference notes. */
@@ -62,13 +73,13 @@ export class Library {
 
 	/** Find an existing reference with the same DOI, ISBN or URL. */
 	findExisting(data: Pick<ReferenceData, "doi" | "isbn" | "url">, except?: TFile): TFile | null {
-		const doi = data.doi?.toLowerCase();
+		const doi = data.doi ? normalizeDoi(data.doi)?.toLowerCase() : undefined;
 		const isbn = data.isbn;
 		const url = data.url?.replace(/\/$/, "");
 		for (const f of this.referenceFiles()) {
 			if (f === except) continue;
 			const fm = this.frontmatter(f);
-			if (doi && String(fm[this.prop("doi")] ?? "").toLowerCase() === doi) return f;
+			if (doi && normalizeDoi(String(fm[this.prop("doi")] ?? ""))?.toLowerCase() === doi) return f;
 			if (isbn && normalizeIsbn(String(fm[this.prop("isbn")] ?? "")) === isbn) return f;
 			if (url && String(fm[this.prop("url")] ?? "").replace(/\/$/, "") === url) return f;
 		}
@@ -104,17 +115,22 @@ export class Library {
 
 	formatName(format: string, citekey: string, data: Partial<ReferenceData>): string {
 		const name = format
-			.replace(/\{\{citekey\}\}/g, citekey)
-			.replace(/\{\{title\}\}/g, data.title ?? "")
-			.replace(/\{\{year\}\}/g, data.year ? String(data.year) : "")
-			.replace(/\{\{author\}\}/g, data.familyNames?.[0] ?? "");
+			// Function replacers, so "$&" or "$1" in a title is not treated as a pattern.
+			.replace(/\{\{citekey\}\}/g, () => citekey)
+			.replace(/\{\{title\}\}/g, () => data.title ?? "")
+			.replace(/\{\{year\}\}/g, () => (data.year ? String(data.year) : ""))
+			.replace(/\{\{author\}\}/g, () => data.familyNames?.[0] ?? "");
 		return safeFilename(name) || citekey;
 	}
 
 	/** Properties derived from looked-up data, keyed by real property names. */
 	propertiesFor(data: ReferenceData, citekey: string, status?: string): Frontmatter {
 		const p = (k: PropertyKey) => this.prop(k);
-		const authors = data.authors.map((a) => (this.s.authorsAsLinks ? `[[${a}]]` : a));
+		// Characters that would break or redirect a wikilink are dropped from link targets.
+		const authors = data.authors
+			.map((a) => (this.s.authorsAsLinks ? a.replace(/[[\]|#^\\/:]/g, " ").replace(/\s+/g, " ").trim() : a))
+			.filter(Boolean)
+			.map((a) => (this.s.authorsAsLinks ? `[[${a}]]` : a));
 		const out: Frontmatter = {
 			[p("citekey")]: citekey,
 			[p("type")]: data.type,
@@ -146,18 +162,20 @@ export class Library {
 			const t = this.app.vault.getAbstractFileByPath(normalizePath(this.s.templatePath));
 			if (t instanceof TFile) template = await this.app.vault.read(t);
 		}
+		// Everything except the citekey and year comes from a remote source, so escape it.
+		const e = (v: string | undefined) => (v === undefined ? undefined : escapeMarkdown(v));
 		return renderTemplate(template, {
 			citekey,
-			title: data.title,
-			authors: data.authors,
+			title: e(data.title),
+			authors: data.authors.map(escapeMarkdown),
 			year: data.year,
-			publisher: data.publisher,
-			journal: data.journal,
-			url: data.url,
-			doi: data.doi,
-			isbn: data.isbn,
-			abstract: data.abstract,
-			type: data.type,
+			publisher: e(data.publisher),
+			journal: e(data.journal),
+			url: safeUrl(data.url),
+			doi: e(data.doi),
+			isbn: e(data.isbn),
+			abstract: e(data.abstract),
+			type: e(data.type),
 		});
 	}
 
@@ -229,7 +247,9 @@ export class Library {
 		const link = `[[${attachment.name}]]`;
 		await this.app.fileManager.processFrontMatter(note, (f: Frontmatter) => {
 			if (attachment.extension === "pdf" && isEmpty(f[this.prop("pdf")])) f[this.prop("pdf")] = link;
-			const list = Array.isArray(f[this.prop("attachments")]) ? (f[this.prop("attachments")] as string[]) : [];
+			const current = f[this.prop("attachments")];
+			// Keep a single existing value rather than replacing it.
+			const list: unknown[] = Array.isArray(current) ? current : isEmpty(current) ? [] : [current];
 			if (!list.includes(link)) f[this.prop("attachments")] = [...list, link];
 		});
 	}

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { detectIdentifier, findIdentifierInText, normalizeIsbn } from "../src/identifiers";
-import { renderTemplate, safeFilename } from "../src/template";
+import { escapeMarkdown, renderTemplate, safeFilename } from "../src/template";
 
 test("detects ISBN-13 with hyphens", () => {
 	assert.deepEqual(detectIdentifier("978-0-14-312837-3"), { kind: "isbn", value: "9780143128373" });
@@ -45,4 +45,16 @@ test("template sections render only with values", () => {
 
 test("safe filenames", () => {
 	assert.equal(safeFilename('a: b/c?'), "a b c");
+});
+
+test("safe filenames drop leading/trailing dots and control characters", () => {
+	assert.equal(safeFilename("..hidden"), "hidden");
+	assert.equal(safeFilename("name. "), "name");
+	assert.equal(safeFilename("a\u0000b"), "a b");
+	assert.equal(Array.from(safeFilename("😀".repeat(200))).length, 180);
+});
+
+test("escapeMarkdown neutralises remote markup", () => {
+	assert.equal(escapeMarkdown("`$= dv.x` ![x](http://t/p.png) <img> #tag"), "\\`\\$= dv.x\\` \\!\\[x\\](http://t/p.png) \\<img\\> \\#tag");
+	assert.equal(escapeMarkdown("a\nb"), "a b");
 });

@@ -78,6 +78,13 @@ export const DEFAULT_SETTINGS: LibrarySettings = {
 export function withDefaults(saved: Partial<LibrarySettings> | null | undefined): LibrarySettings {
 	const s = Object.assign({}, DEFAULT_SETTINGS, saved ?? {});
 	s.propertyNames = Object.assign({}, DEFAULT_SETTINGS.propertyNames, saved?.propertyNames ?? {});
+	// Guard against hand-edited or corrupted data.json.
+	if (!Array.isArray(s.statuses)) s.statuses = [...DEFAULT_SETTINGS.statuses];
+	if (!Array.isArray(s.urlProperties)) s.urlProperties = [...DEFAULT_SETTINGS.urlProperties];
+	// An empty references folder would make every note in the vault a "reference" that
+	// automatic completion could rename and move.
+	if (typeof s.referencesFolder !== "string" || !s.referencesFolder.trim() || s.referencesFolder.trim() === "/")
+		s.referencesFolder = DEFAULT_SETTINGS.referencesFolder;
 	return s;
 }
 
@@ -123,7 +130,7 @@ export class LibrarySettingTab extends PluginSettingTab {
 				);
 
 		new Setting(containerEl).setName("Folders").setHeading();
-		text("References folder", "Where reference notes live.", () => s.referencesFolder, (v) => (s.referencesFolder = v), "References");
+		text("References folder", "Where reference notes live. Cannot be the vault root.", () => s.referencesFolder, (v) => (s.referencesFolder = v && v !== "/" ? v : DEFAULT_SETTINGS.referencesFolder), "References");
 		text("Attachments folder", "Where PDFs and other files are filed.", () => s.attachmentsFolder, (v) => (s.attachmentsFolder = v));
 		text("Inbox folder", "Drop zone for Web Clipper notes and PDFs.", () => s.inboxFolder, (v) => (s.inboxFolder = v), "Inbox");
 

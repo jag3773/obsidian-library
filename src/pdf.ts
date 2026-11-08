@@ -11,7 +11,9 @@ export async function readPdf(app: App, file: TFile, pages = 3): Promise<PdfInfo
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const pdfjs: any = await loadPdfJs();
 	const data = await app.vault.readBinary(file);
-	const doc = await pdfjs.getDocument({ data: new Uint8Array(data) }).promise;
+	// PDFs in the inbox may come from anywhere: disable eval-based font rendering (CVE-2024-4367)
+	// and scripting.
+	const doc = await pdfjs.getDocument({ data: new Uint8Array(data), isEvalSupported: false, enableScripting: false }).promise;
 	try {
 		const parts: string[] = [];
 		for (let i = 1; i <= Math.min(pages, doc.numPages); i++) {
