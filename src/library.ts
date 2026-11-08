@@ -22,7 +22,7 @@ export function unlink(v: unknown): string {
 /** Thrown when the plugin was unloaded while work was queued or in flight. */
 export class Cancelled extends Error {
 	constructor() {
-		super("Reference Library was unloaded");
+		super("Library was unloaded");
 		this.name = "Cancelled";
 	}
 }

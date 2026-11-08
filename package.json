@@ -1,6 +1,6 @@
 {
-  "name": "reference-library",
-  "version": "0.1.0",
+  "name": "obsidian-library",
+  "version": "0.2.0",
   "description": "A reference manager for Obsidian: one note per source, metadata in properties, Bases as the library view.",
   "main": "main.js",
   "scripts": {
@@ -24,6 +24,7 @@
     "esbuild": "^0.28.2",
     "obsidian": "^1.8.7",
     "tslib": "^2.6.3",
-    "typescript": "^5.4.5"
+    "typescript": "^5.4.5",
+    "yaml": "^2.9.1"
   }
 }

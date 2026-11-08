@@ -4,6 +4,7 @@
 // like Obsidian's, so tests see the same "written but not yet indexed" window.
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { parse as parseYamlText, stringify as stringifyYamlText } from "yaml";
 (globalThis as any).window ??= globalThis;
 
 type Handler = (...args: any[]) => void;
@@ -36,6 +37,9 @@ export class TAbstractFile {
 
 export class TFolder extends TAbstractFile {
 	children: TAbstractFile[] = [];
+	isRoot() {
+		return this.path === "/";
+	}
 }
 
 export class TFile extends TAbstractFile {
@@ -61,8 +65,12 @@ export function getFrontMatterInfo(content: string) {
 	return { exists: !!m, frontmatter: m ? m[1] : "", contentStart: m ? m[0].length : 0 };
 }
 
+export function stringifyYaml(obj: unknown): string {
+	return stringifyYamlText(obj);
+}
+
 export function parseYaml(text: string): any {
-	return text.trim() ? JSON.parse(text) : null;
+	return text.trim() ? parseYamlText(text) : null;
 }
 
 function splitContent(content: string): { fm: Record<string, unknown> | null; body: string } {
@@ -86,6 +94,9 @@ export class Vault extends Events {
 	}
 	getAbstractFileByPath(path: string): TAbstractFile | null {
 		return this.files.get(normalizePath(path)) ?? null;
+	}
+	getAllLoadedFiles(): TAbstractFile[] {
+		return [...this.files.values()];
 	}
 	getFiles(): TFile[] {
 		return [...this.files.values()].filter((f): f is TFile => f instanceof TFile);
@@ -326,6 +337,22 @@ export class PluginSettingTab {
 	containerEl: any = { empty() {}, createEl() {} };
 	constructor(public app: App, public plugin: unknown) {}
 }
+export class AbstractInputSuggest<T> {
+	limit = 100;
+	constructor(public app: App, protected textInputEl: any) {}
+	setValue(value: string) {
+		this.textInputEl.value = value;
+	}
+	getValue(): string {
+		return this.textInputEl.value;
+	}
+	close() {}
+	/** Test hook: what the suggester would list for a query. */
+	suggestionsFor(query: string): T[] {
+		return (this as any).getSuggestions(query);
+	}
+}
+
 export class Setting {
 	constructor(_el: unknown) {}
 }

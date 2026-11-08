@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { App, Notice, TFile, http, pdf } from "obsidian";
 import { Inbox } from "../src/inbox";
 import { Library } from "../src/library";
-import ReferenceLibraryPlugin from "../src/main";
+import LibraryPlugin from "../src/main";
 import { ReferenceData } from "../src/metadata/types";
 import { LibrarySettings, withDefaults } from "../src/settings";
 
@@ -29,7 +29,7 @@ function setup(overrides: Partial<LibrarySettings> = {}) {
 
 async function setupPlugin(overrides: Partial<LibrarySettings> = {}) {
 	const { app } = setup();
-	const plugin = new ReferenceLibraryPlugin(app as any, { id: "reference-library" } as any);
+	const plugin = new LibraryPlugin(app as any, { id: "library" } as any);
 	(plugin as any).data = overrides;
 	await plugin.onload();
 	return { app, plugin };
