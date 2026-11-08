@@ -23,13 +23,13 @@ Open Library and Google Books (ISBN), Crossref and doi.org (DOI), arXiv, and a w
 
 ## Install (beta)
 
-Until it is in the community directory:
+Until it is in the community directory, build it from source:
 
-1. Install the BRAT plugin.
-2. In BRAT, add this repository: `jag3773/obsidian-library`.
+1. `npm install && npm run build`
+2. Copy `main.js`, `manifest.json` and `styles.css` into `<vault>/.obsidian/plugins/reference-library/`.
 3. Enable **Reference Library** in Community plugins.
 
-Or build it yourself: `npm install && npm run build`, then copy `main.js`, `manifest.json` and `styles.css` into `<vault>/.obsidian/plugins/reference-library/`.
+**BRAT:** BRAT installs from GitHub releases, so it works once a release is listed on the [releases page](https://github.com/jag3773/obsidian-library/releases). If none is listed yet, use the steps above. When one is: install BRAT, choose **Add beta plugin**, enter `jag3773/obsidian-library`, then enable **Reference Library**.
 
 ## Suggested Base
 
@@ -66,9 +66,21 @@ views:
 ```
 npm install
 npm run dev      # watch build
-npm test         # unit tests for citekeys, identifiers, templates and metadata parsers
+npm test         # unit and vault-level tests
 npm run bbt-accuracy -- path/to/BetterBibTeX.json 2025   # compare generated keys with a Zotero export
 ```
+
+`npm test` also runs vault-level tests (duplicate detection, inbox filing, attachment naming, timers and unload) against an in-memory stand-in for the Obsidian API in `test/mocks/obsidian.ts`.
+
+### Releasing
+
+Set the same version in `manifest.json` and `package.json`, add it to `versions.json`, commit, then push a matching tag:
+
+```
+git tag 0.1.0 && git push origin 0.1.0
+```
+
+The Release workflow runs the tests, builds, and publishes a pre-release with `main.js`, `manifest.json` and `styles.css`, which is what BRAT downloads.
 
 ## License
 

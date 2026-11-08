@@ -1,4 +1,5 @@
-// Bundles test/*.test.ts (which import only pure modules) for node:test.
+// Bundles test/*.test.ts for node:test. Vault-level tests import an in-memory
+// Obsidian stand-in (test/mocks/obsidian.ts) in place of the real "obsidian" module.
 import esbuild from "esbuild";
 import { readdirSync } from "node:fs";
 
@@ -10,5 +11,6 @@ await esbuild.build({
   format: "esm",
   outdir: "test-dist",
   outExtension: { ".js": ".mjs" },
+  alias: { obsidian: "./test/mocks/obsidian.ts" },
   logLevel: "warning",
 });

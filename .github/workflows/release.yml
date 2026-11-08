@@ -1,0 +1,40 @@
+# Publishes a GitHub release with the files Obsidian and BRAT install.
+# Trigger: push a tag equal to the version in manifest.json, e.g.
+#   git tag 0.1.1 && git push origin 0.1.1
+name: Release
+
+on:
+  push:
+    tags: ["*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Check the tag matches manifest.json and package.json
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          manifest=$(node -p "require('./manifest.json').version")
+          pkg=$(node -p "require('./package.json').version")
+          if [ "$tag" != "$manifest" ] || [ "$tag" != "$pkg" ]; then
+            echo "Tag $tag does not match manifest.json ($manifest) and package.json ($pkg)" >&2
+            exit 1
+          fi
+          node -e "const v=require('./versions.json'); if(!v['$tag']) { console.error('versions.json has no entry for $tag'); process.exit(1) }"
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" main.js manifest.json styles.css \
+            --title "$GITHUB_REF_NAME" --generate-notes --prerelease

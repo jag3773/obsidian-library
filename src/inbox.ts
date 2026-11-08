@@ -24,6 +24,11 @@ export class Inbox {
 		return (file.extension === "md" || file.extension === "pdf") && this.library.inFolder(file, inbox);
 	}
 
+	/** Still in the inbox after a network wait (not moved, renamed out or deleted meanwhile). */
+	private stillWaiting(file: TFile): boolean {
+		return this.library.exists(file) && this.accepts(file);
+	}
+
 	async process(file: TFile): Promise<TFile | null> {
 		if (file.extension === "md") return this.processNote(file);
 		if (file.extension === "pdf") return this.processPdf(file);
@@ -42,20 +47,26 @@ export class Inbox {
 			return null;
 		}
 		const data = await lookup(this.fetch, { kind: "url", value: url }, { crossrefMailto: s.crossrefMailto });
-		if (data) {
-			const dup = this.library.findExisting(data, file);
+		// Effective metadata: the lookup result with the clip's URL kept, or a fallback when the
+		// lookup failed (offline, HTTP error). The URL ends up in the configured url property
+		// even if the clipper used "source".
+		const basis: ReferenceData = data
+			? { ...data, url: data.url ?? url }
+			: { type: "webpage", title: String(fm.title ?? file.basename), authors: [], familyNames: [], url, source: "note" };
+		return this.library.exclusive(async () => {
+			if (!this.stillWaiting(file)) return null;
+			// Check the enriched identifiers and the clip's own URL, whether or not the lookup worked.
+			const dup = this.library.findExisting(basis, file) ?? this.library.findExisting({ url }, file);
 			if (dup) {
 				new Notice(`Reference Library: ${file.name} matches existing ${dup.basename}; left in the inbox.`);
 				return null;
 			}
-		}
-		// Make sure the URL ends up in the configured url property even if the clipper used "source".
-		const basis: ReferenceData | null = data
-			? { ...data, url: data.url ?? url }
-			: { type: "webpage", title: String(fm.title ?? file.basename), authors: [], familyNames: [], url, source: "note" };
-		const moved = await this.library.complete(file, basis, s.clipStatus);
-		new Notice(`Reference Library: filed ${moved.basename}`);
-		return moved;
+			// The clip keeps the URL property it came from, so later captures of the same original
+			// URL still match after the mapped url becomes the canonical one.
+			const moved = await this.library.complete(file, basis, s.clipStatus, [url]);
+			new Notice(`Reference Library: filed ${moved.basename}`);
+			return moved;
+		});
 	}
 
 	/** A PDF: find a DOI or ISBN inside, look it up, create the note, file the PDF. */
@@ -73,14 +84,6 @@ export class Inbox {
 		} catch (e) {
 			console.warn("[reference-library] could not read PDF", file.path, e);
 		}
-		if (data) {
-			const dup = this.library.findExisting(data);
-			if (dup) {
-				await this.library.attach(dup, file);
-				new Notice(`Reference Library: attached ${file.name} to existing ${dup.basename}`);
-				return dup;
-			}
-		}
 		if (!data) {
 			const authors = pdfAuthor ? pdfAuthor.split(/\s*(?:;|,| and )\s*/).filter(Boolean) : [];
 			data = {
@@ -91,9 +94,22 @@ export class Inbox {
 				source: "PDF",
 			};
 		}
-		const note = await this.library.create(data, s.defaultStatus);
-		await this.library.attach(note, file);
-		new Notice(`Reference Library: created ${note.basename} from ${data.source}`);
-		return note;
+		const found = data;
+		// The note's frontmatter may not be indexed yet (new, or reserved by a concurrent
+		// capture), so pass the naming values along; values already on the note win.
+		const naming = { title: found.title, familyNames: found.familyNames, year: found.year };
+		return this.library.exclusive(async () => {
+			if (!this.stillWaiting(file)) return null;
+			const dup = this.library.findExisting(found);
+			if (dup) {
+				await this.library.attach(dup, file, naming);
+				new Notice(`Reference Library: attached ${file.name} to existing ${dup.basename}`);
+				return dup;
+			}
+			const note = await this.library.create(found, s.defaultStatus);
+			await this.library.attach(note, file, naming);
+			new Notice(`Reference Library: created ${note.basename} from ${found.source}`);
+			return note;
+		});
 	}
 }

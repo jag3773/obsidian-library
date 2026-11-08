@@ -32,7 +32,8 @@ export function parseArxiv(xml: string, id: string): ReferenceData | null {
 	};
 }
 
+/** Old-scheme IDs such as hep-th/9901001 keep their slash in the query. */
 export async function lookupArxiv(fetch: Fetcher, id: string): Promise<ReferenceData | null> {
-	const res = await fetch(`https://export.arxiv.org/api/query?id_list=${encodeURIComponent(id)}`);
+	const res = await fetch(`https://export.arxiv.org/api/query?id_list=${encodeURIComponent(id).replace(/%2F/gi, "/")}`);
 	return res.status === 200 ? parseArxiv(res.text, id) : null;
 }
