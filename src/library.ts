@@ -1,7 +1,9 @@
 import { App, TFile, TFolder, moment, normalizePath } from "obsidian";
-import { disambiguate, familyFromFullName, generateCitekey } from "./citekey";
+import { disambiguate, generateCitekey } from "./citekey";
 import { Identifier, canonicalIsbn, normalizeDoi, normalizeIsbn } from "./identifiers";
 import { ReferenceData } from "./metadata/types";
+import { familyOf, nameValue, namesFromProperty, parseName } from "./names";
+import { PEOPLE_KEYS, PeopleKey, TEXT_KEYS } from "./properties";
 import { LibrarySettings, PropertyKey } from "./settings";
 import { DEFAULT_TEMPLATE, escapeMarkdown, markdownSafeUrl, renderTemplate, safeFilename } from "./template";
 
@@ -71,6 +73,17 @@ export interface AttachmentNaming {
 	year?: number;
 }
 
+/** Equal property values (strings, numbers, lists) as YAML would hold them. */
+function sameValue(a: unknown, b: unknown): boolean {
+	return a === b || JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+}
+
+/** Bibliographic fields a lookup knows better than a clipper's guess from the page. */
+const CLIPPED_FIELDS: PropertyKey[] = [
+	"type", "title", "authors", "editors", "translators", "contributors", "year", "published", "publisher", "place",
+	"journal", "volume", "issue", "pages", "edition", "series", "isbn", "issn", "doi", "language", "abstract",
+];
+
 /**
  * All vault operations on reference notes.
  *
@@ -78,14 +91,6 @@ export interface AttachmentNaming {
  * regenerateCitekey) must run inside exclusive(), together with any duplicate check
  * they depend on, so that concurrent captures can't pick the same key or file.
  */
-/** Equal property values (strings, numbers, lists) as YAML would hold them. */
-function sameValue(a: unknown, b: unknown): boolean {
-	return a === b || JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
-}
-
-/** Bibliographic fields a lookup knows better than a clipper's guess from the page. */
-const CLIPPED_FIELDS: PropertyKey[] = ["type", "title", "authors", "year", "published", "publisher", "journal", "isbn", "doi", "abstract"];
-
 export class Library {
 	private queue: Promise<unknown> = Promise.resolve();
 	private reservations: Reservation[] = [];
@@ -209,11 +214,12 @@ export class Library {
 	/** Citekey inputs from a note's existing properties (for regeneration and attachment names). */
 	keyInputsFromNote(file: TFile): Pick<ReferenceData, "title" | "familyNames" | "year"> {
 		const fm = this.frontmatter(file);
-		const raw = fm[this.prop("authors")];
-		const authors = (Array.isArray(raw) ? raw : raw ? [raw] : []).map(unlink).filter(Boolean);
+		// The authors, or the editors of an edited volume; names split by the rules in names.ts.
+		const authors = namesFromProperty(fm[this.prop("authors")]);
+		const people = authors.length ? authors : namesFromProperty(fm[this.prop("editors")]);
 		return {
 			title: String(fm[this.prop("title")] ?? file.basename),
-			familyNames: authors.map(familyFromFullName),
+			familyNames: people.map(familyOf).filter(Boolean),
 			year: Number(String(fm[this.prop("year")] ?? "").match(/\d{4}/)?.[0]) || undefined,
 		};
 	}
@@ -231,26 +237,25 @@ export class Library {
 	/** Properties derived from looked-up data, keyed by real property names. */
 	propertiesFor(data: ReferenceData, citekey: string, status?: string): Frontmatter {
 		const p = (k: PropertyKey) => this.prop(k);
-		// Characters that would break or redirect a wikilink are dropped from link targets.
-		const authors = data.authors
-			.map((a) => (this.s.authorsAsLinks ? a.replace(/[[\]|#^\\/:]/g, " ").replace(/\s+/g, " ").trim() : a))
-			.filter(Boolean)
-			.map((a) => (this.s.authorsAsLinks ? `[[${a}]]` : a));
 		const out: Frontmatter = {
 			[p("citekey")]: citekey,
 			[p("type")]: data.type,
 			[p("title")]: data.title,
-			[p("authors")]: authors.length ? authors : undefined,
-			[p("year")]: data.year,
-			[p("publisher")]: data.publisher,
-			[p("journal")]: data.journal,
+		};
+		for (const k of PEOPLE_KEYS) {
+			const list = this.peopleValues(data, k);
+			if (list.length) out[p(k)] = list;
+		}
+		out[p("year")] = data.year;
+		for (const k of TEXT_KEYS) out[p(k)] = data[k];
+		Object.assign(out, {
 			[p("isbn")]: data.isbn,
 			[p("doi")]: data.doi,
 			[p("url")]: data.url,
 			[p("abstract")]: data.abstract,
 			[p("status")]: status,
 			[p("added")]: moment().format("YYYY-MM-DD"),
-		};
+		});
 		// Older settings may map the year to a date property; the full date wins there.
 		if (data.date) out[p("published")] = data.date;
 		for (const k of Object.keys(out)) if (isEmpty(out[k])) delete out[k];
@@ -272,6 +277,18 @@ export class Library {
 		});
 	}
 
+	/**
+	 * Property values for one list of people: links or plain names (the "Authors as links"
+	 * setting), with a sort form where a name wouldn't split right by rule (see names.ts).
+	 */
+	peopleValues(data: ReferenceData, key: PeopleKey): string[] {
+		const display = key === "authors" ? data.authors : data[key] ?? [];
+		const parts = data.names?.[key] ?? [];
+		return display
+			.map((d, i) => nameValue(parts[i] ?? parseName(d), this.s.authorsAsLinks))
+			.filter(Boolean);
+	}
+
 	async renderBody(data: ReferenceData, citekey: string): Promise<string> {
 		let template = DEFAULT_TEMPLATE;
 		if (this.s.templatePath) {
@@ -284,7 +301,17 @@ export class Library {
 			citekey,
 			title: e(data.title),
 			authors: data.authors.map(escapeMarkdown),
+			editors: (data.editors ?? []).map(escapeMarkdown),
+			translators: (data.translators ?? []).map(escapeMarkdown),
 			year: data.year,
+			volume: e(data.volume),
+			issue: e(data.issue),
+			pages: e(data.pages),
+			edition: e(data.edition),
+			place: e(data.place),
+			series: e(data.series),
+			language: e(data.language),
+			accessed: e(data.accessed),
 			published: e(data.date),
 			publisher: e(data.publisher),
 			journal: e(data.journal),

@@ -1,3 +1,5 @@
+import { familyOf, parseName } from "./names";
+
 /**
  * Citekey generation using a subset of Better BibTeX's formula language.
  * Pure module: no Obsidian imports, unit tested in test/citekey.test.ts.
@@ -181,10 +183,10 @@ export function disambiguate(key: string, taken: (k: string) => boolean): string
 	throw new Error(`Could not disambiguate citekey ${key}`);
 }
 
-/** Pull a family name out of "First Last", "Last, First" or an organisation name. */
+/**
+ * The family name for citekeys from "First Last", "Last, First", "{Organization}" or an
+ * organization's name (used whole, as Better BibTeX does for single-field names).
+ */
 export function familyFromFullName(name: string): string {
-	const n = name.trim();
-	if (n.includes(",")) return n.split(",")[0].trim();
-	const parts = n.split(/\s+/);
-	return parts[parts.length - 1];
+	return familyOf(parseName(name)) || name.trim();
 }

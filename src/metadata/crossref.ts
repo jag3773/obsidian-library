@@ -1,3 +1,4 @@
+import { PersonName, displayName, familyOf } from "../names";
 import { Fetcher, getJson } from "./http";
 import { parseDate } from "./dates";
 import { ReferenceData, joinTitle, stripTags, yearFrom } from "./types";
@@ -31,6 +32,9 @@ interface CslPerson {
 	family?: string;
 	name?: string;
 	literal?: string;
+	"non-dropping-particle"?: string;
+	"dropping-particle"?: string;
+	suffix?: string;
 }
 
 interface CslWork {
@@ -39,6 +43,15 @@ interface CslWork {
 	subtitle?: string | string[];
 	author?: CslPerson[];
 	editor?: CslPerson[];
+	translator?: CslPerson[];
+	volume?: string | number;
+	issue?: string | number;
+	page?: string;
+	edition?: string | number;
+	"publisher-place"?: string;
+	language?: string;
+	ISSN?: string[];
+	"collection-title"?: string | string[];
 	issued?: { "date-parts"?: number[][] };
 	published?: { "date-parts"?: number[][] };
 	"container-title"?: string | string[];
@@ -51,23 +64,53 @@ interface CslWork {
 
 const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
+/** A CSL name, keeping its parts; organizations and single-field names stay whole. */
+function personName(p: CslPerson): PersonName {
+	const literal = p.literal ?? p.name;
+	if (literal && !p.family) return { literal: literal.trim() };
+	return {
+		given: p.given?.trim() || undefined,
+		family: p.family?.trim() || undefined,
+		particle: (p["non-dropping-particle"] ?? p["dropping-particle"])?.trim() || undefined,
+		suffix: p.suffix?.trim() || undefined,
+	};
+}
+
 export function parseCsl(work: CslWork | null, doi: string, source: string): ReferenceData | null {
 	if (!work) return null;
 	const title = first(work.title);
 	if (!title) return null;
-	const people = work.author?.length ? work.author : work.editor ?? [];
-	const authors = people.map((p) => p.name ?? p.literal ?? [p.given, p.family].filter(Boolean).join(" ")).filter(Boolean);
-	const familyNames = people.map((p) => p.family ?? p.name ?? p.literal ?? "").filter(Boolean);
+	const people = (list: CslPerson[] | undefined) => {
+		const parts = (list ?? []).map(personName).filter((n) => n.literal || n.family);
+		return { display: parts.map(displayName), parts };
+	};
+	const authors = people(work.author);
+	const editors = people(work.editor);
+	const translators = people(work.translator);
 	const type = TYPE_MAP[work.type ?? ""] ?? "article";
+	const text = (v: string | number | undefined) => (v === undefined || v === null || v === "" ? undefined : String(v).trim() || undefined);
 	const dateParts = work.issued?.["date-parts"]?.[0] ?? work.published?.["date-parts"]?.[0];
 	return {
 		type,
 		title: joinTitle(title, first(work.subtitle)),
-		authors,
-		familyNames,
+		authors: authors.display,
+		// An edited volume's citekey uses its editors.
+		familyNames: (authors.parts.length ? authors.parts : editors.parts).map(familyOf),
+		editors: editors.display.length ? editors.display : undefined,
+		translators: translators.display.length ? translators.display : undefined,
+		names: { authors: authors.parts, editors: editors.parts, translators: translators.parts },
 		date: dateParts?.length ? parseDate(dateParts.slice(0, 3).join("-")) : undefined,
 		year: yearFrom(dateParts?.[0]),
+		// For a chapter, the container is the book; for an article, the journal.
 		journal: type === "book" ? undefined : first(work["container-title"]),
+		volume: text(work.volume),
+		issue: text(work.issue),
+		pages: text(work.page),
+		edition: text(work.edition),
+		place: text(work["publisher-place"]),
+		series: text(first(work["collection-title"])),
+		language: text(work.language),
+		issn: work.ISSN?.[0],
 		publisher: work.publisher,
 		abstract: stripTags(work.abstract),
 		isbn: work.ISBN?.[0]?.replace(/-/g, ""),

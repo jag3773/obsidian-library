@@ -24,21 +24,29 @@ async function firstOf(...tries: (() => Promise<ReferenceData | null>)[]): Promi
 	return null;
 }
 
+const GAP_FIELDS = ["publisher", "abstract", "place", "edition", "series", "language", "volume", "issue", "pages", "issn", "journal"] as const;
+const GAP_PEOPLE = ["editors", "translators", "contributors"] as const;
+
 /** page with each empty field taken from more. */
-function fillGaps(page: ReferenceData, more: ReferenceData): ReferenceData {
-	const out = { ...page };
-	if ((!out.authors.length || out.contributorsOnly) && more.authors.length && !more.contributorsOnly) {
+export function fillGaps(page: ReferenceData, more: ReferenceData): ReferenceData {
+	const out: ReferenceData = { ...page, names: { ...page.names } };
+	if (!out.authors.length && more.authors.length) {
 		out.authors = more.authors;
 		out.familyNames = more.familyNames;
-		delete out.contributorsOnly;
+		out.names!.authors = more.names?.authors;
+	}
+	for (const k of GAP_PEOPLE) {
+		if (!out[k]?.length && more[k]?.length) {
+			out[k] = more[k];
+			out.names![k] = more.names?.[k];
+		}
 	}
 	if (!out.date && more.date) {
 		out.date = more.date;
 		out.year = more.year;
 	}
 	out.year ??= more.year;
-	out.publisher ??= more.publisher;
-	out.abstract ??= more.abstract;
+	for (const k of GAP_FIELDS) out[k] ??= more[k];
 	return out;
 }
 
@@ -66,20 +74,33 @@ export async function lookup(fetch: Fetcher, id: Identifier, opts: LookupOptions
 		case "arxiv":
 			return firstOf(() => lookupArxiv(fetch, id.value));
 		case "url": {
-			const repo = await firstOf(() => lookupGitHub(fetch, id.value));
-			if (repo) return repo;
-			const page = await firstOf(() => lookupWebpage(fetch, id.value));
-			if (page?.doi) {
-				const work = await lookup(fetch, { kind: "doi", value: page.doi }, opts);
-				if (work) return { ...work, url: work.url ?? page.url };
-			}
-			// A book page (a store, Goodreads) often lacks a date, publisher or description that
-			// the ISBN's catalog record has. The page's own values win; the record fills gaps.
-			if (page?.isbn && (!page.authors.length || page.contributorsOnly || !page.date || !page.publisher || !page.abstract)) {
-				const book = await lookup(fetch, { kind: "isbn", value: page.isbn }, opts);
-				if (book) return fillGaps(page, book);
-			}
-			return page;
+			const r = await lookupUrl(fetch, id.value, opts);
+			// Web sources change; citations of them carry the date they were read. A work found
+			// through its DOI is the published version, so it doesn't need one.
+			return r && !r.doi ? { ...r, accessed: r.accessed ?? today() } : r;
 		}
 	}
+}
+
+/** The local calendar date, YYYY-MM-DD. */
+export function today(now = new Date()): string {
+	const p = (n: number) => String(n).padStart(2, "0");
+	return `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`;
+}
+
+async function lookupUrl(fetch: Fetcher, url: string, opts: LookupOptions): Promise<ReferenceData | null> {
+	const repo = await firstOf(() => lookupGitHub(fetch, url));
+	if (repo) return repo;
+	const page = await firstOf(() => lookupWebpage(fetch, url));
+	if (page?.doi) {
+		const work = await lookup(fetch, { kind: "doi", value: page.doi }, opts);
+		if (work) return { ...work, url: work.url ?? page.url };
+	}
+	// A book page (a store, Goodreads) often lacks a date, publisher or description that
+	// the ISBN's catalog record has. The page's own values win; the record fills gaps.
+	if (page?.isbn && (!page.authors.length || !page.date || !page.publisher || !page.abstract)) {
+		const book = await lookup(fetch, { kind: "isbn", value: page.isbn }, opts);
+		if (book) return fillGaps(page, book);
+	}
+	return page;
 }

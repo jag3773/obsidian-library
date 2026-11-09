@@ -93,7 +93,7 @@ function resolve(item: Obj, objs: Obj[]): Obj {
 	const deref = (v: unknown) => list(v).map((x) => (isObj(x) && !str(x.name) && typeof x["@id"] === "string" ? byId.get(x["@id"]) ?? x : x));
 	const out = { ...item };
 	// One level only: a resolved node's own references are left alone, so cycles can't loop.
-	for (const k of ["author", "creator", "publisher", "isPartOf"]) if (out[k] !== undefined) out[k] = deref(out[k]);
+	for (const k of ["author", "creator", "editor", "translator", "publisher", "isPartOf"]) if (out[k] !== undefined) out[k] = deref(out[k]);
 	return out;
 }
 
@@ -126,9 +126,20 @@ function doiOf(o: Obj): string | undefined {
 }
 
 function fromItem(o: Obj): Found {
+	const persons = (v: unknown) => people(v).map((a) => clean(a) ?? a);
+	const first = str(o.pageStart);
+	const last = str(o.pageEnd);
 	return {
 		title: clean(str(o.name) ?? str(o.headline)),
-		authors: people(o.author ?? o.creator).map((a) => clean(a) ?? a),
+		authors: persons(o.author ?? o.creator),
+		editors: persons(o.editor),
+		translators: persons(o.translator),
+		language: str(o.inLanguage),
+		edition: str(o.bookEdition),
+		volume: str(o.volumeNumber),
+		issue: str(o.issueNumber),
+		pages: str(o.pagination) ?? (first ? (last ? `${first}-${last}` : first) : undefined),
+		issn: str(o.issn),
 		date: parseDate(str(o.datePublished) ?? str(o.dateCreated) ?? str(o.releasedate) ?? str(o.uploadDate) ?? str(o.copyrightYear)),
 		publisher: clean(str(o.publisher)),
 		journal: clean(str(list(o.isPartOf).find(isObj)?.name)),

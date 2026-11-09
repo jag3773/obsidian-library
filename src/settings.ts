@@ -4,7 +4,7 @@ import { parsePattern } from "./citekey";
 import type LibraryPlugin from "./main";
 import { PathSuggest, filePaths, folderPaths } from "./ui/PathSuggest";
 
-import { FIELD_LABELS, PROPERTY_KEYS, PropertyKey } from "./properties";
+import { DEFAULT_PROPERTY_NAMES, FIELD_LABELS, PROPERTY_KEYS, PropertyKey } from "./properties";
 
 export { PROPERTY_KEYS };
 export type { PropertyKey };
@@ -47,24 +47,8 @@ export const DEFAULT_SETTINGS: LibrarySettings = {
 	completeOnPropertyEdit: true,
 	urlProperties: ["url", "source"],
 	crossrefMailto: "",
-	propertyNames: {
-		citekey: "citekey",
-		type: "type",
-		title: "title",
-		authors: "authors",
-		year: "year",
-		published: "published",
-		publisher: "publisher",
-		journal: "journal",
-		isbn: "isbn",
-		doi: "doi",
-		url: "url",
-		abstract: "abstract",
-		status: "status",
-		pdf: "pdf",
-		attachments: "attachments",
-		added: "added",
-	},
+	propertyNames: { ...DEFAULT_PROPERTY_NAMES },
+
 };
 
 /** Merge saved data over defaults, including the nested property map. */

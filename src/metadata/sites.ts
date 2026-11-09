@@ -52,7 +52,9 @@ const amazon: Site = (doc) => {
 		title: title?.replace(/(?:\s*[([](?:Paperback|Hardcover|Kindle Edition|Mass Market Paperback|Audio CD|eBook)[)\]])+$/i, ""),
 		// Without an author in the byline, later layers (JSON-LD, the ISBN's record) may have one.
 		authors: writers.map((p) => p.name),
-		contributors: named.map((p) => p.name),
+		editors: named.filter((p) => /editor/i.test(p.role)).map((p) => p.name),
+		translators: named.filter((p) => /translator/i.test(p.role)).map((p) => p.name),
+		contributors: named.filter((p) => p.role && !/author|editor|translator/i.test(p.role)).map((p) => p.name),
 		date: parseDate(rpi("publication_date") ?? details.get("publication date") ?? publisherRow?.match(/\(([^)]*\d{4}[^)]*)\)/)?.[1]),
 		publisher: publisher || undefined,
 		isbn,

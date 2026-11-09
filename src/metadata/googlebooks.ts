@@ -12,6 +12,7 @@ interface GBResponse {
 			publisher?: string;
 			publishedDate?: string;
 			description?: string;
+			language?: string;
 		};
 	}[];
 }
@@ -29,6 +30,7 @@ export function parseGoogleBooks(json: GBResponse | null, isbn: string): Referen
 		year: yearOf(parseDate(v.publishedDate)) ?? yearFrom(v.publishedDate),
 		publisher: v.publisher,
 		abstract: stripTags(v.description),
+		language: v.language,
 		isbn,
 		source: "Google Books",
 	};

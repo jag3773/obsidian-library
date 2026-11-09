@@ -8,6 +8,7 @@ interface OLBook {
 	subtitle?: string;
 	authors?: { name: string }[];
 	publishers?: { name: string }[];
+	publish_places?: { name: string }[];
 	publish_date?: string;
 	url?: string;
 	notes?: string | { value: string };
@@ -25,6 +26,7 @@ export function parseOpenLibrary(json: Record<string, OLBook> | null, isbn: stri
 		date: parseDate(book.publish_date),
 		year: yearOf(parseDate(book.publish_date)) ?? yearFrom(book.publish_date),
 		publisher: book.publishers?.[0]?.name,
+		place: book.publish_places?.[0]?.name,
 		isbn,
 		source: "Open Library",
 	};
