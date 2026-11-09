@@ -296,11 +296,17 @@ const lit = (s: string) => JSON.stringify(s);
  * expression and property id is quoted correctly at the YAML layer). Every field is listed
  * under `properties` with its label as display name, so reading the base back recovers the
  * exact mapping it was made from.
+ *
+ * Views: the whole library grouped by status, one view per status in reading order (the
+ * reading workflow: queued, reading, reviewing, processed, shelved by default), references
+ * in no collection ("Unfiled"), and references without a PDF.
  */
-export function starterBase(folder: string, p: Record<PropertyKey, string>): Record<string, unknown> {
+export function starterBase(folder: string, p: Record<PropertyKey, string>, statuses: string[] = ["queued"]): Record<string, unknown> {
 	const id = (k: PropertyKey) => `note.${p[k]}`;
 	const properties: Record<string, unknown> = { "formula.name": { displayName: "Title" } };
 	for (const k of PROPERTY_KEYS) properties[id(k)] = { displayName: FIELD_LABELS[k] };
+	const columns = ["formula.name", id("authors"), id("year"), id("added")];
+	const statusViews = [...new Set(statuses.map((s) => s.trim()).filter(Boolean))].map((s) => ({ type: "table", name: viewName(s), filters: `note[${lit(p.status)}] == ${lit(s)}`, order: columns }));
 	return {
 		filters: { and: [`file.inFolder(${lit(folder)})`, `file.hasProperty(${lit(p.citekey)})`] },
 		formulas: { name: `file.asLink(note[${lit(p.title)}])` },
@@ -310,14 +316,16 @@ export function starterBase(folder: string, p: Record<PropertyKey, string>): Rec
 				type: "table",
 				name: "Library",
 				groupBy: { property: id("status"), direction: "ASC" },
-				order: ["formula.name", id("authors"), id("year"), id("type"), id("citekey")],
+				order: ["formula.name", id("authors"), id("year"), id("type"), id("citekey"), id("collections")],
 			},
-			{
-				type: "table",
-				name: "Queue",
-				filters: `note[${lit(p.status)}] == "queued"`,
-				order: ["formula.name", id("authors"), id("year"), id("added")],
-			},
+			...statusViews,
+			{ type: "table", name: "Unfiled", filters: `note[${lit(p.collections)}].isEmpty()`, order: [...columns, id("status")] },
+			{ type: "table", name: "Missing PDF", filters: `note[${lit(p.pdf)}].isEmpty()`, order: [...columns, id("status")] },
 		],
 	};
+}
+
+/** A view name from a status: "queued" → "Queued". */
+function viewName(status: string): string {
+	return status.charAt(0).toUpperCase() + status.slice(1);
 }

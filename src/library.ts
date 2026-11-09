@@ -1,9 +1,10 @@
-import { App, TFile, TFolder, normalizePath } from "obsidian";
+import { App, TFile, TFolder, getFrontMatterInfo, normalizePath, parseYaml } from "obsidian";
 import { disambiguate, generateCitekey } from "./citekey";
 import { Identifier, canonicalIsbn, normalizeDoi, normalizeIsbn } from "./identifiers";
 import { ReferenceData } from "./metadata/types";
 import { familyOf, nameValue, namesFromProperty, parseName } from "./names";
 import { FieldChange, compareProperties } from "./manual";
+import { sameBytes } from "./sync";
 import { FIELD_LABELS, PEOPLE_KEYS, PeopleKey, TEXT_KEYS } from "./properties";
 import { LibrarySettings, PropertyKey } from "./settings";
 import { DEFAULT_TEMPLATE, escapeMarkdown, markdownSafeUrl, renderTemplate, safeFilename } from "./template";
@@ -192,13 +193,39 @@ export class Library {
 		for (const r of this.liveReservations()) if (r.file !== except && sameIdentity(want, r)) return r.file;
 		for (const f of this.referenceFiles()) {
 			if (f === except) continue;
-			const fm = this.frontmatter(f);
-			// The mapped url plus any capture-URL properties (a clip keeps its "source").
-			const have = identityOf(
-				{ doi: fm[this.prop("doi")] as string | undefined, isbn: fm[this.prop("isbn")] as string | undefined },
-				[fm[this.prop("url")], ...this.s.urlProperties.map((k) => fm[k])]
-			);
-			if (sameIdentity(want, have)) return f;
+			if (sameIdentity(want, this.noteIdentity(this.frontmatter(f)))) return f;
+		}
+		return null;
+	}
+
+	/** The mapped url plus any capture-URL properties (a clip keeps its "source"). */
+	private noteIdentity(fm: Frontmatter): Identity {
+		return identityOf(
+			{ doi: fm[this.prop("doi")] as string | undefined, isbn: fm[this.prop("isbn")] as string | undefined },
+			[fm[this.prop("url")], ...this.s.urlProperties.map((k) => fm[k])]
+		);
+	}
+
+	/**
+	 * findExisting, plus reference notes the metadata cache hasn't indexed yet, read from disk.
+	 * A note another device filed can arrive through sync moments before a capture here;
+	 * checking it keeps the same item from being filed twice. Call inside exclusive().
+	 */
+	async findExistingOnDisk(data: Partial<Pick<ReferenceData, "doi" | "isbn" | "url">>, except?: TFile): Promise<TFile | null> {
+		const found = this.findExisting(data, except);
+		if (found) return found;
+		const want = identityOf(data);
+		if (!want.doi && !want.isbn && !want.urls.length) return null;
+		for (const f of this.referenceFiles()) {
+			if (f === except || this.app.metadataCache.getFileCache(f)) continue;
+			let fm: Frontmatter = {};
+			try {
+				const info = getFrontMatterInfo(await this.app.vault.read(f));
+				fm = ((info.exists ? parseYaml(info.frontmatter) : null) ?? {}) as Frontmatter;
+			} catch {
+				continue; // unreadable or invalid YAML: Obsidian indexes such a note without properties
+			}
+			if (this.exists(f) && sameIdentity(want, this.noteIdentity(fm))) return f;
 		}
 		return null;
 	}
@@ -440,7 +467,7 @@ export class Library {
 	 * (a just-created or just-reserved note). Call inside exclusive().
 	 */
 	async attach(note: TFile, attachment: TFile, known: AttachmentNaming = {}): Promise<void> {
-		await this.moveTo(attachment, this.s.attachmentsFolder, this.attachmentBasename(note, known));
+		await this.moveTo(attachment, this.s.attachmentsFolder, this.attachmentName(note, known));
 		await this.linkAttachment(note, attachment, true);
 	}
 
@@ -450,15 +477,33 @@ export class Library {
 	 */
 	async attachNew(note: TFile, data: ArrayBuffer, ext: string, known: AttachmentNaming = {}): Promise<TFile> {
 		await this.ensureFolder(this.s.attachmentsFolder);
-		const path = this.freePath(this.s.attachmentsFolder, this.attachmentBasename(note, known), ext);
+		const path = this.freePath(this.s.attachmentsFolder, this.attachmentName(note, known), ext);
 		this.assertActive();
 		const file = await this.app.vault.createBinary(path, data);
 		await this.linkAttachment(note, file, true);
 		return file;
 	}
 
-	/** The attachment filename format applied to a note. */
-	private attachmentBasename(note: TFile, known: AttachmentNaming): string {
+	/**
+	 * A file already in the vault with the same bytes as `attachment`, at the name attach()
+	 * would give it or linked as the note's pdf. Another device (or a backup restore) filed
+	 * it already, so filing this copy too would only add "name 1.pdf".
+	 */
+	async alreadyFiled(note: TFile, attachment: TFile, known: AttachmentNaming = {}): Promise<TFile | null> {
+		const target = normalizePath(`${this.s.attachmentsFolder}/${this.attachmentName(note, known)}.${attachment.extension}`);
+		const pdf = unlink(this.frontmatter(note)[this.prop("pdf")]);
+		const candidates = [this.app.vault.getAbstractFileByPath(target), pdf ? this.app.metadataCache.getFirstLinkpathDest(pdf, note.path) : null];
+		let bytes: Uint8Array | null = null;
+		for (const c of candidates) {
+			if (!(c instanceof TFile) || c === attachment || c.extension !== attachment.extension) continue;
+			bytes ??= new Uint8Array(await this.app.vault.readBinary(attachment));
+			if (sameBytes(bytes, new Uint8Array(await this.app.vault.readBinary(c)))) return c;
+		}
+		return null;
+	}
+
+	/** The filename (without extension) attach() gives an attachment of this note. */
+	private attachmentName(note: TFile, known: AttachmentNaming): string {
 		const fm = this.frontmatter(note);
 		const fromNote = this.keyInputsFromNote(note);
 		const noteTitle = asText(fm[this.prop("title")]).trim();

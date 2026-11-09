@@ -169,6 +169,7 @@ All requests go through Obsidian's `requestUrl`, which works on mobile and avoid
 - Done: **Duplicate review and merge** ([#26](https://github.com/jag3773/obsidian-stacks/issues/26)): exact matches only (DOI, ISBN, URL, or normalized title + year), each with its reason. Merge keeps the note named after its citekey (or the one chosen), unions list properties, fills empty ones, copies annotations and prose the kept note lacks, rewrites links to the other note in every Markdown file (`vault.process`), then trashes it. Previewed first; no journal (vault backup or git covers recovery). `src/duplicates.ts`, `src/links.ts`, `src/maintenance.ts`.
 - Done: **Import from Zotero (Better BibTeX JSON)**, the conversion this project used once, generalized ([#18](https://github.com/jag3773/obsidian-stacks/issues/18)). Matches by filename, citekey property, Zotero item key, then a unique title; adds properties without touching bodies; creates notes for unmatched items; previews first; reports, and can be undone. See docs/migrating-from-zotero.md.
 - Done: manual references and a reviewed metadata refresh ([#16](https://github.com/jag3773/obsidian-stacks/issues/16)); complete citation fields and creator roles ([#15](https://github.com/jag3773/obsidian-stacks/issues/15)).
+- Done: batch edits with a preview (status, collections, citekeys, completion) over an explicit scope, a **Stacks batch** Bases view whose rows Obsidian selects, and **Create library base** with reading-workflow views ([#27](https://github.com/jag3773/obsidian-stacks/issues/27)); offline clips wait in the inbox, the inbox is processed at startup, and filing re-checks unindexed notes and identical PDFs ([#30](https://github.com/jag3773/obsidian-stacks/issues/30)); PDF full-text search documented, not built ([#25](https://github.com/jag3773/obsidian-stacks/issues/25)). See docs/batch-and-collections.md, docs/sync-and-mobile.md, docs/searching.md.
 
 ## 6. Architecture
 
@@ -191,6 +192,9 @@ src/
   roundtrip.ts         tablet send / watch / return / conflict, over a Host interface
   desktop.ts           the Host from Node's fs and child_process (desktop only, loaded lazily)
   ui/AddReferenceModal.ts, ui/ConflictModal.ts
+  batch.ts             batch actions on properties, preview, cancellable runner (pure)
+  batchActions.ts      batch scopes and per-note execution; batchCommands.ts wires commands and the Bases view
+  sync.ts              offline detection and byte comparison for sync-safe filing (pure)
 test/                  node:test suites for the pure modules
 ```
 
