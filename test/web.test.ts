@@ -272,3 +272,18 @@ test("an article's <time datetime> is the date of last resort", () => {
 	const tagged = `<meta property="article:published_time" content="2021-01-02">` + html;
 	assert.equal(parseWebpage(tagged, "https://ctoday.example/a").date, "2021-01-02", "tags win");
 });
+
+test("news stories and blog posts are typed article; other pages stay webpage", () => {
+	const ld = (type: string) => `<script type="application/ld+json">{"@type":"${type}","headline":"H"}</script>`;
+	for (const t of ["NewsArticle", "BlogPosting", "Article", "ReportageNewsArticle"]) assert.equal(parseWebpage(ld(t), "https://n.example/a").type, "article", t);
+	assert.equal(parseWebpage(`<meta property="og:type" content="article"><title>T</title>`, "https://n.example/a").type, "article");
+	assert.equal(parseWebpage(`<meta property="og:type" content="website"><title>T</title>`, "https://n.example/").type, "webpage");
+	assert.equal(parseWebpage(ld("WebPage"), "https://n.example/p").type, "webpage");
+});
+
+test("a page that is only a schema.org WebPage takes its type from og:type", () => {
+	const html = `<meta property="og:type" content="article"><script type="application/ld+json">{"@type":"WebPage","name":"Occult king","datePublished":"2023-05-25"}</script>`;
+	const r = parseWebpage(html, "https://mnn.example/a");
+	assert.equal(r.type, "article");
+	assert.equal(r.date, "2023-05-25");
+});

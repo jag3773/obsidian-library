@@ -57,7 +57,8 @@ function metaLayer(doc: Document): Found {
 	const site = one("og:site_name", "application-name");
 	const highwire = many("citation_author", "dc.creator", "dcterms.creator", "author", "article:author", "book:author", "parsely-author", "sailthru.author");
 	return {
-		type: one("citation_journal_title") ? "article" : undefined,
+		// Highwire journal tags, or Open Graph's "article" (news and blog posts).
+		type: one("citation_journal_title") || one("og:type")?.toLowerCase() === "article" ? "article" : undefined,
 		title: one("citation_title", "dc.title", "dcterms.title", "og:title", "twitter:title") ?? stripSite(docTitle, site),
 		// Highwire and Dublin Core use "Last, First"; turn it into display order.
 		authors: (highwire.length ? highwire : bylines(doc)).map((a) => (/^[^,]+,[^,]+$/.test(a) ? a.split(",").map((x) => x.trim()).reverse().join(" ") : a)),

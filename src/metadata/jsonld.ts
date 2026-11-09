@@ -51,14 +51,16 @@ const ARTICLE = /^(ScholarlyArticle|Article|NewsArticle|ReportageNewsArticle|Ana
 const RANK: [RegExp, string][] = [
 	[/^ScholarlyArticle$/, "article"],
 	[/^(Book|Audiobook)$/, "book"],
-	[ARTICLE, "webpage"],
+	// News stories and blog posts are articles, as in the user's existing library.
+	[ARTICLE, "article"],
 	[/^(SoftwareSourceCode|SoftwareApplication)$/, "software"],
 	[/^(VideoObject|Movie|TVEpisode)$/, "video"],
 	[/^(Thesis)$/, "thesis"],
 	[/^(Chapter)$/, "chapter"],
 	[/^(CreativeWork|Dataset|PodcastEpisode)$/, "webpage"],
-	// Some sites describe an article only as a page, with its date.
-	[/^(WebPage|ItemPage|AboutPage)$/, "webpage"],
+	// Some sites describe an article only as a page, with its date. "WebPage" says nothing
+	// about what kind of work it is, so the type is left to the other tags (og:type).
+	[/^(WebPage|ItemPage|AboutPage)$/, ""],
 ];
 
 /**
