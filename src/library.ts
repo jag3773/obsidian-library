@@ -1,4 +1,4 @@
-import { App, TFile, TFolder, moment, normalizePath } from "obsidian";
+import { App, TFile, TFolder, normalizePath } from "obsidian";
 import { disambiguate, generateCitekey } from "./citekey";
 import { Identifier, canonicalIsbn, normalizeDoi, normalizeIsbn } from "./identifiers";
 import { ReferenceData } from "./metadata/types";
@@ -7,7 +7,7 @@ import { FieldChange, compareProperties } from "./manual";
 import { FIELD_LABELS, PEOPLE_KEYS, PeopleKey, TEXT_KEYS } from "./properties";
 import { LibrarySettings, PropertyKey } from "./settings";
 import { DEFAULT_TEMPLATE, escapeMarkdown, markdownSafeUrl, renderTemplate, safeFilename } from "./template";
-import { asText } from "./text";
+import { asText, localDate } from "./text";
 
 type Frontmatter = Record<string, unknown>;
 
@@ -262,7 +262,7 @@ export class Library {
 			[p("url")]: data.url,
 			[p("abstract")]: data.abstract,
 			[p("status")]: status,
-			[p("added")]: moment().format("YYYY-MM-DD"),
+			[p("added")]: localDate(),
 		});
 		// Older settings may map the year to a date property; the full date wins there.
 		if (data.date) out[p("published")] = data.date;
@@ -279,7 +279,7 @@ export class Library {
 		this.assertActive();
 		await this.app.fileManager.processFrontMatter(file, (fm: Frontmatter) => {
 			for (const [k, v] of Object.entries(props)) {
-				const unchanged = (Object.prototype.hasOwnProperty.call(replaceIfUnchanged, k) as boolean) && sameValue(fm[k], replaceIfUnchanged[k]);
+				const unchanged = Object.keys(replaceIfUnchanged).includes(k) && sameValue(fm[k], replaceIfUnchanged[k]);
 				if (isEmpty(fm[k]) || unchanged) fm[k] = v;
 			}
 		});

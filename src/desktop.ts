@@ -12,14 +12,23 @@ export interface NodeModules {
 	cp: typeof import("child_process");
 }
 
+declare global {
+	interface Window {
+		/** Node's require, present in the desktop app's renderer. */
+		require: NodeJS.Require;
+	}
+}
+
 function requireModules(): NodeModules {
-	if (!Platform.isDesktopApp) throw new Error("This needs the Obsidian desktop app.");
-	return {
-		fs: require("fs") as typeof import("fs"),
-		path: require("path") as typeof import("path"),
-		os: require("os") as typeof import("os"),
-		cp: require("child_process") as typeof import("child_process"),
-	};
+	if (Platform.isDesktopApp) {
+		return {
+			fs: window.require("fs") as typeof import("fs"),
+			path: window.require("path") as typeof import("path"),
+			os: window.require("os") as typeof import("os"),
+			cp: window.require("child_process") as typeof import("child_process"),
+		};
+	}
+	throw new Error("This needs the Obsidian desktop app.");
 }
 
 /** `modules` is for tests, which run as ES modules without require. */

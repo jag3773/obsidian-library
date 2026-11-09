@@ -10,3 +10,11 @@ export function asText(v: unknown): string {
 	if (Array.isArray(v)) return v.map(asText).join(",");
 	return "";
 }
+
+const pad = (n: number) => String(n).padStart(2, "0");
+
+/** A local date as YYYY-MM-DD, or YYYY-MM-DD HHmm with `withTime`. */
+export function localDate(d: Date = new Date(), withTime = false): string {
+	const day = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+	return withTime ? `${day} ${pad(d.getHours())}${pad(d.getMinutes())}` : day;
+}

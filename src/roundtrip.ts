@@ -6,11 +6,12 @@
  * builds from Node's modules on desktop (desktop.ts) and tests build over a temp folder.
  */
 
-import { App, TFile, moment, normalizePath } from "obsidian";
+import { App, TFile, normalizePath } from "obsidian";
 import { ExtractSummary, Extractor, describeExtraction } from "./extract";
 import { Cancelled, Library } from "./library";
 import { readAnnotations } from "./pdf";
 import { LibrarySettings } from "./settings";
+import { localDate } from "./text";
 
 /** What Stacks sent to the tablet folder, so a returned file can be matched and checked. */
 export interface SentRecord {
@@ -395,7 +396,7 @@ export class RoundTrip {
 	/** Save the other version of a diverged PDF next to the attachment, linked from the note. */
 	private async keepCopy(target: { pdf: TFile; note: TFile }, bytes: Uint8Array, which: "vault" | "tablet"): Promise<TFile> {
 		const folder = target.pdf.parent?.path ?? this.s.attachmentsFolder;
-		const path = this.library.freePath(folder, `${target.pdf.basename} (${which} copy ${moment().format("YYYY-MM-DD")})`, "pdf");
+		const path = this.library.freePath(folder, `${target.pdf.basename} (${which} copy ${localDate()})`, "pdf");
 		this.markBusy(normalizePath(path));
 		const copy = await this.app.vault.createBinary(path, toArrayBuffer(bytes));
 		await this.library.linkAttachment(target.note, copy);

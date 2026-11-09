@@ -1,8 +1,9 @@
-import { App, TFile, moment, normalizePath, parseYaml, stringifyYaml } from "obsidian";
+import { App, TFile, normalizePath, parseYaml, stringifyYaml } from "obsidian";
 import { Library } from "./library";
 import { htmlToText } from "./metadata/html";
 import { LibrarySettings } from "./settings";
 import { BbtExport, ImportChoices, ImportOptions, ImportPlan, ImportReport, PlannedCreate, PlannedUpdate, VaultNote, parseTagRules, planImport } from "./zotero";
+import { localDate } from "./text";
 
 export type { ImportChoices };
 
@@ -128,7 +129,7 @@ export class ZoteroImporter {
 	 * bibliographic fields only; workflow fields such as status are always filled, never replaced.
 	 */
 	async apply(plan: ImportPlan, choices: ImportChoices, onProgress: (done: number, total: number) => void = () => undefined): Promise<ImportBackup> {
-		const stamp = moment().format("YYYY-MM-DD HHmm");
+		const stamp = localDate(new Date(), true);
 		const backup: ImportBackup = { version: 1, date: stamp, reportPath: "", created: [], modified: [], renamed: [] };
 		const total = plan.updates.length + plan.creates.length;
 		let done = 0;
