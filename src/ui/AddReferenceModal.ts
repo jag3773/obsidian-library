@@ -22,7 +22,7 @@ export class AddReferenceModal extends Modal {
 		};
 		new Setting(contentEl).setName("Identifier").addText((t) => {
 			t.setPlaceholder("978-0-14-312837-3  ·  10.1000/xyz  ·  https://…").onChange((v) => (this.value = v));
-			t.inputEl.addClass("library-input");
+			t.inputEl.addClass("stacks-input");
 			t.inputEl.addEventListener("keydown", (e) => {
 				if (e.key === "Enter") {
 					e.preventDefault();

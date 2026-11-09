@@ -15,7 +15,7 @@ import { ImportModal } from "./ui/ImportModal";
 import { ReportModal } from "./ui/ReportModal";
 import { ZoteroImporter } from "./zoteroImport";
 
-const PREFIX = "Library";
+const PREFIX = "Stacks";
 const COMPLETE_DEBOUNCE_MS = 2000;
 const INBOX_SETTLE_MS = 750;
 const BUSY_SETTLE_MS = 1500;

@@ -27,7 +27,7 @@ export class NewReferenceModal extends Modal {
 		});
 		new Setting(contentEl).setName("Title").addText((t) => {
 			t.onChange((v) => (this.input.title = v));
-			t.inputEl.addClass("library-input");
+			t.inputEl.addClass("stacks-input");
 			t.inputEl.addEventListener("keydown", (e) => {
 				if (e.key === "Enter") {
 					e.preventDefault();
@@ -42,7 +42,7 @@ export class NewReferenceModal extends Modal {
 			.addTextArea((t) => {
 				t.onChange((v) => (this.input.authors = v));
 				t.inputEl.rows = 3;
-				t.inputEl.addClass("library-input");
+				t.inputEl.addClass("stacks-input");
 			});
 		new Setting(contentEl)
 			.setName("Date")
@@ -52,7 +52,7 @@ export class NewReferenceModal extends Modal {
 			.setName("Identifier")
 			.setDesc("Optional ISBN, DOI or URL, stored without a lookup.")
 			.addText((t) => t.onChange((v) => (this.input.identifier = v)));
-		this.errorEl = contentEl.createEl("p", { cls: "library-error" });
+		this.errorEl = contentEl.createEl("p", { cls: "stacks-error" });
 		new Setting(contentEl)
 			.addButton((b) => b.setButtonText("Cancel").onClick(() => this.close()))
 			.addButton((b) => b.setButtonText("Create").setCta().onClick(() => this.submit()));

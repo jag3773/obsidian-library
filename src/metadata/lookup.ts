@@ -18,7 +18,7 @@ async function firstOf(...tries: (() => Promise<ReferenceData | null>)[]): Promi
 			const r = await t();
 			if (r) return r;
 		} catch (e) {
-			console.warn("[library] lookup source failed", e);
+			console.warn("[stacks] lookup source failed", e);
 		}
 	}
 	return null;

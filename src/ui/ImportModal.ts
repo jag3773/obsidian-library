@@ -78,7 +78,7 @@ export class ImportModal extends Modal {
 						this.plan = null;
 					});
 				t.inputEl.rows = 4;
-				t.inputEl.addClass("library-input");
+				t.inputEl.addClass("stacks-input");
 			});
 		this.toggle(contentEl, "Keep automatic tags", "Tags Zotero added from catalogs and feeds, not only the ones you added.", "automaticTags");
 
@@ -135,14 +135,14 @@ export class ImportModal extends Modal {
 			await this.save();
 			await this.render();
 		} catch (e) {
-			new Notice(`Library: ${e instanceof Error ? e.message : String(e)}`);
+			new Notice(`Stacks: ${e instanceof Error ? e.message : String(e)}`);
 		}
 	}
 
 	private async preview(): Promise<void> {
 		const { errors } = parseTagRules(this.choices.tagRules);
 		if (errors.length) {
-			new Notice(`Library: ${errors.join("; ")}`);
+			new Notice(`Stacks: ${errors.join("; ")}`);
 			return;
 		}
 		try {
@@ -152,7 +152,7 @@ export class ImportModal extends Modal {
 			await this.save();
 			await this.render();
 		} catch (e) {
-			new Notice(`Library: ${e instanceof Error ? e.message : String(e)}`);
+			new Notice(`Stacks: ${e instanceof Error ? e.message : String(e)}`);
 		}
 	}
 
@@ -173,7 +173,7 @@ export class ImportModal extends Modal {
 		line("notes whose Zotero item isn't in the export", r.missingFromExport.length);
 		line("notes with broken frontmatter to repair", r.repairedNotes.length);
 		line("attachments outside the vault", r.attachmentsNotInVault.length);
-		el.createEl("p", { cls: "setting-item-description", text: "Importing writes a report note with every list, and a backup so Library: Undo last Zotero import can reverse it." });
+		el.createEl("p", { cls: "setting-item-description", text: "Importing writes a report note with every list, and a backup so Stacks: Undo last Zotero import can reverse it." });
 	}
 
 	private async run(): Promise<void> {
@@ -181,14 +181,14 @@ export class ImportModal extends Modal {
 		this.busy = true;
 		const plan = this.plan;
 		this.close();
-		const progress = new Notice("Library: importing…", 0);
+		const progress = new Notice("Stacks: importing…", 0);
 		try {
 			const backup = await this.importer.apply(plan, this.choices, (done, total) => {
-				if (done % 50 === 0 || done === total) progress.setMessage(`Library: importing… ${done} of ${total}`);
+				if (done % 50 === 0 || done === total) progress.setMessage(`Stacks: importing… ${done} of ${total}`);
 			});
 			this.onImported(backup.reportPath, this.importer.lastBackup);
 		} catch (e) {
-			new Notice(`Library: import stopped. ${e instanceof Error ? e.message : String(e)} Run Undo last Zotero import to reverse what was written.`);
+			new Notice(`Stacks: import stopped. ${e instanceof Error ? e.message : String(e)} Run Undo last Zotero import to reverse what was written.`);
 		} finally {
 			progress.hide();
 			this.busy = false;

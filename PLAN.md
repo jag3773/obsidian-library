@@ -1,4 +1,4 @@
-# Library: Obsidian plugin specification
+# Stacks: Obsidian plugin specification
 
 A reference manager that lives entirely in an Obsidian vault. One Markdown note per source, metadata in properties, PDFs next to them, and Obsidian Bases as the library UI. MIT licensed.
 
@@ -93,7 +93,7 @@ All paths are vault-relative unless marked absolute. "Example (ekfocus)" shows t
 
 | Setting | Default | Purpose |
 |---|---|---|
-| Bibliography file, format, filter, automatic | `library.json`, CSL-JSON, none, off | Done: CSL-JSON, BibLaTeX or BibTeX export, optionally filtered by a property and rewritten automatically ([#19](https://github.com/jag3773/obsidian-library/issues/19)) |
+| Bibliography file, format, filter, automatic | `library.json`, CSL-JSON, none, off | Done: CSL-JSON, BibLaTeX or BibTeX export, optionally filtered by a property and rewritten automatically ([#19](https://github.com/jag3773/obsidian-stacks/issues/19)) |
 | Citation style | `chicago-author-date` | CSL style for the "copy formatted citation" command |
 | Health check scope | all | Which checks the report runs |
 
@@ -158,8 +158,8 @@ All requests go through Obsidian's `requestUrl`, which works on mobile and avoid
 - **Copy formatted citation** and **Copy citekey as Pandoc citation** (`[@key]`).
 - Done: bibliography export to CSL-JSON (for Pandoc, Quarto and the Pandoc Reference List plugin), BibLaTeX or BibTeX, regenerated after reference changes with a debounce. Written without citation.js: the mapping is `src/citation.ts`, documented in docs/citation-fields.md.
 - **Health check** report note: notes without a citekey, duplicate citekeys or DOIs/ISBNs, `pdf` links that don't resolve, PDFs in the attachments folder with no note, items stuck in a status longer than a set number of days.
-- Done: **Import from Zotero (Better BibTeX JSON)**, the conversion this project used once, generalized ([#18](https://github.com/jag3773/obsidian-library/issues/18)). Matches by filename, citekey property, Zotero item key, then a unique title; adds properties without touching bodies; creates notes for unmatched items; previews first; reports, and can be undone. See docs/migrating-from-zotero.md.
-- Done: manual references and a reviewed metadata refresh ([#16](https://github.com/jag3773/obsidian-library/issues/16)); complete citation fields and creator roles ([#15](https://github.com/jag3773/obsidian-library/issues/15)).
+- Done: **Import from Zotero (Better BibTeX JSON)**, the conversion this project used once, generalized ([#18](https://github.com/jag3773/obsidian-stacks/issues/18)). Matches by filename, citekey property, Zotero item key, then a unique title; adds properties without touching bodies; creates notes for unmatched items; previews first; reports, and can be undone. See docs/migrating-from-zotero.md.
+- Done: manual references and a reviewed metadata refresh ([#16](https://github.com/jag3773/obsidian-stacks/issues/16)); complete citation fields and creator roles ([#15](https://github.com/jag3773/obsidian-stacks/issues/15)).
 
 ## 6. Architecture
 
@@ -198,7 +198,7 @@ The plugin sends identifiers (ISBN, DOI, arXiv ID, URL) to the public services i
 - MIT license, `LICENSE` in the repo root.
 - Build with esbuild, as in the Obsidian sample plugin. Release assets: `main.js`, `manifest.json`, `styles.css`.
 - Beta distribution through BRAT from a GitHub repo, then submission to the community directory after stage 2.
-- Plugin id `library` is provisional; check the community list for clashes before submitting.
+- Plugin id `stacks` (display name Stacks). The earlier `library` id clashed with an existing community plugin.
 
 ## 9. Open questions
 

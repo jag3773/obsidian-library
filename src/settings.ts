@@ -240,11 +240,11 @@ export class LibrarySettingTab extends PluginSettingTab {
 				t.setValue(s.citekeyPattern).onChange(async (v) => {
 					try {
 						parsePattern(v);
-						t.inputEl.removeClass("library-invalid");
+						t.inputEl.removeClass("stacks-invalid");
 						s.citekeyPattern = v.trim();
 						await save();
 					} catch {
-						t.inputEl.addClass("library-invalid");
+						t.inputEl.addClass("stacks-invalid");
 					}
 				})
 			);
@@ -301,7 +301,7 @@ export class LibrarySettingTab extends PluginSettingTab {
 					.setValue(s.exportFilter)
 					.onChange(async (v) => {
 						const ok = !v.trim() || !!parseFilter(v);
-						t.inputEl.toggleClass("library-invalid", !ok);
+						t.inputEl.toggleClass("stacks-invalid", !ok);
 						if (ok) {
 							s.exportFilter = v.trim();
 							await save();

@@ -18,7 +18,7 @@ const fm = (app: App, f: TFile) => app.metadataCache.getFileCache(f)?.frontmatte
 
 async function setupPlugin(data: Record<string, unknown> = {}) {
 	const app = new App();
-	const plugin = new LibraryPlugin(app as any, { id: "library" } as any);
+	const plugin = new LibraryPlugin(app as any, { id: "stacks" } as any);
 	(plugin as any).data = data;
 	await plugin.onload();
 	http.calls = [];

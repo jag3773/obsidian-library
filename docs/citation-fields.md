@@ -1,6 +1,6 @@
 # Citation fields
 
-Library keeps a reference's metadata in flat note properties, so Bases can sort, filter and group on them. This page lists each field, what it holds, and how it becomes a citation record when you export a bibliography.
+Stacks keeps a reference's metadata in flat note properties, so Bases can sort, filter and group on them. This page lists each field, what it holds, and how it becomes a citation record when you export a bibliography.
 
 Every field goes through the property-name mapping in settings (**Library base** and the field dropdowns), so your vault can call `volume` `vol`, or `journal` `publicationTitle`. A field is written only when the source has a value: a book never carries empty `volume` or `issue` keys. Lookups fill empty properties only and never overwrite a value you typed.
 
@@ -43,7 +43,7 @@ For citations, each name is split into family and given names by rule: the last 
 | `García Márquez, Gabriel` | The same, as plain text |
 | `{Mission Network News}` or `[[Mission Network News\|{Mission Network News}]]` | An organization or other name used as is |
 
-Library writes these forms itself when a source (Crossref, a Zotero import) says how a name splits. A single word, or a name containing a word such as University, Press, Foundation or Organization, is treated as an organization's.
+Stacks writes these forms itself when a source (Crossref, a Zotero import) says how a name splits. A single word, or a name containing a word such as University, Press, Foundation or Organization, is treated as an organization's.
 
 ## Types
 
@@ -82,5 +82,5 @@ Exports report records that lack these, so you can fill them in:
 
 ## What formats can't hold
 
-- **BibTeX** (as opposed to BibLaTeX) has no fields for translators, the access date or language, and keeps only the year and month of a date. Library writes them as BibLaTeX fields, which BibTeX styles ignore.
+- **BibTeX** (as opposed to BibLaTeX) has no fields for translators, the access date or language, and keeps only the year and month of a date. Stacks writes them as BibLaTeX fields, which BibTeX styles ignore.
 - **Neither format** keeps `contributors`, `collections`, `status` or your own properties.

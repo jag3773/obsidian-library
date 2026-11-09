@@ -174,7 +174,7 @@ export function siteLayer(doc: Document, url: string, ld: Found): Found {
 	try {
 		return site[1](doc, u, ld);
 	} catch (e) {
-		console.warn("[library] site reader failed", u.hostname, e);
+		console.warn("[stacks] site reader failed", u.hostname, e);
 		return {};
 	}
 }

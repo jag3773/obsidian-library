@@ -195,7 +195,7 @@ async function flush(rounds = 20) {
 test("auto-export: debounced after reference edits, off by default, only for references", async (t) => {
 	t.mock.timers.enable({ apis: ["setTimeout"] });
 	const app = new App();
-	const plugin = new LibraryPlugin(app as any, { id: "library" } as any);
+	const plugin = new LibraryPlugin(app as any, { id: "stacks" } as any);
 	(plugin as any).data = { autoExport: true, exportPath: "bib/library.json" };
 	await plugin.onload();
 	const note = app.vault.addFile("References/k.md", `---\n{"citekey":"k","type":"book","title":"T"}\n---\n`);
@@ -228,7 +228,7 @@ test("auto-export: debounced after reference edits, off by default, only for ref
 test("auto-export: a pending export is dropped on unload", async (t) => {
 	t.mock.timers.enable({ apis: ["setTimeout"] });
 	const app = new App();
-	const plugin = new LibraryPlugin(app as any, { id: "library" } as any);
+	const plugin = new LibraryPlugin(app as any, { id: "stacks" } as any);
 	(plugin as any).data = { autoExport: true };
 	await plugin.onload();
 	const note: TFile = app.vault.addFile("References/k.md", `---\n{"citekey":"k"}\n---\n`);
@@ -253,7 +253,7 @@ test("entries follow citekey order, not file order", () => {
 test("auto-export runs only for changes to reference notes", async (t) => {
 	t.mock.timers.enable({ apis: ["setTimeout"] });
 	const app = new App();
-	const plugin = new LibraryPlugin(app as any, { id: "library" } as any);
+	const plugin = new LibraryPlugin(app as any, { id: "stacks" } as any);
 	(plugin as any).data = { autoExport: true };
 	await plugin.onload();
 	let runs = 0;
