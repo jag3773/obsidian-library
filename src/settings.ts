@@ -41,7 +41,9 @@ export interface LibrarySettings {
 	autoExport: boolean;
 	/** The last Zotero import's choices, so a re-run starts from them. */
 	zoteroImport: ImportChoices;
-	/** Backup of the last Zotero import, for undo. */
+	/** The last bibliography file import's choices (CSL-JSON, BibTeX, RIS). */
+	bibliographyImport: ImportChoices;
+	/** Backup of the last import (Zotero or bibliography file), for undo. */
 	lastImportBackup: string;
 
 	// Annotations
@@ -92,6 +94,7 @@ export const DEFAULT_SETTINGS: LibrarySettings = {
 	exportFilter: "",
 	autoExport: false,
 	zoteroImport: { ...DEFAULT_IMPORT_CHOICES },
+	bibliographyImport: { ...DEFAULT_IMPORT_CHOICES },
 	lastImportBackup: "",
 	annotationsHeading: "## Annotations",
 	colorMap: DEFAULT_COLOR_MAP,
@@ -115,6 +118,8 @@ export function withDefaults(saved: Partial<LibrarySettings> | null | undefined)
 	if (!(s.exportFormat in FORMAT_LABELS)) s.exportFormat = DEFAULT_SETTINGS.exportFormat;
 	s.zoteroImport = { ...DEFAULT_IMPORT_CHOICES, ...(saved?.zoteroImport ?? {}) };
 	s.zoteroImport.collections = { ...(s.zoteroImport.collections ?? {}) };
+	s.bibliographyImport = { ...DEFAULT_IMPORT_CHOICES, ...(saved?.bibliographyImport ?? {}) };
+	s.bibliographyImport.collections = { ...(s.bibliographyImport.collections ?? {}) };
 	if (typeof s.libraryBase !== "string") s.libraryBase = "";
 	for (const k of ["annotationsHeading", "colorMap", "statusAfterExtraction", "preExtractionCommand", "tabletFolder", "sendStatus", "returnStatus"] as const)
 		if (typeof s[k] !== "string") s[k] = DEFAULT_SETTINGS[k];

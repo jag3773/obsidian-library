@@ -16,7 +16,9 @@ import { NewReferenceModal } from "./ui/NewReferenceModal";
 import { RefreshModal } from "./ui/RefreshModal";
 import { ImportModal } from "./ui/ImportModal";
 import { ReportModal } from "./ui/ReportModal";
-import { ZoteroImporter } from "./zoteroImport";
+import { ReferenceImporter, ZoteroImporter } from "./zoteroImport";
+import { FileImporter } from "./fileImport";
+import { ImportChoices } from "./importers/plan";
 import { ConflictModal } from "./ui/ConflictModal";
 import { asText } from "./text";
 
@@ -35,6 +37,7 @@ export default class LibraryPlugin extends Plugin {
 	inbox!: Inbox;
 	exporter!: BibliographyExporter;
 	importer!: ZoteroImporter;
+	fileImporter!: FileImporter;
 	extractor!: Extractor;
 	/** Desktop only; null on mobile. */
 	roundTrip: RoundTrip | null = null;
@@ -74,10 +77,12 @@ export default class LibraryPlugin extends Plugin {
 		this.inbox = new Inbox(this.app, this.library, this.fetcher, () => this.settings);
 		this.exporter = new BibliographyExporter(this.app, this.library, () => this.settings);
 		const pluginDir = this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`;
-		this.importer = new ZoteroImporter(this.app, this.library, () => this.settings, `${pluginDir}/backups`, async (path) => {
+		const onBackup = async (path: string) => {
 			this.settings.lastImportBackup = path;
 			await this.saveSettings();
-		});
+		};
+		this.importer = new ZoteroImporter(this.app, this.library, () => this.settings, `${pluginDir}/backups`, onBackup);
+		this.fileImporter = new FileImporter(this.app, this.library, () => this.settings, `${pluginDir}/backups`, onBackup);
 		this.extractor = new Extractor(this.app, this.library, () => this.settings, () => this.alive);
 		this.host = this.createHost();
 		if (this.host)
@@ -140,8 +145,13 @@ export default class LibraryPlugin extends Plugin {
 
 		this.addCommand({ id: "import-zotero", name: "Import from Zotero (Better BibTeX JSON)", callback: () => this.openImport() });
 		this.addCommand({
+			id: "import-bibliography",
+			name: "Import bibliography file (CSL-JSON, BibTeX, RIS)",
+			callback: () => this.openImport(this.fileImporter, this.settings.bibliographyImport),
+		});
+		this.addCommand({
 			id: "undo-zotero-import",
-			name: "Undo last Zotero import",
+			name: "Undo last import",
 			checkCallback: (checking) => {
 				if (!this.settings.lastImportBackup) return false;
 				if (!checking) void this.undoImport();
@@ -570,11 +580,11 @@ export default class LibraryPlugin extends Plugin {
 		}
 	}
 
-	private openImport(): void {
+	private openImport(importer: ReferenceImporter = this.importer, choices: ImportChoices = this.settings.zoteroImport): void {
 		new ImportModal(
 			this.app,
-			this.importer,
-			this.settings.zoteroImport,
+			importer,
+			choices,
 			this.settings.statuses,
 			() => this.saveSettings(),
 			(reportPath) => {

@@ -159,7 +159,7 @@ test("the dry run: matching order, duplicates, group and deleted items, repairs,
 	const { plan } = await importer.plan(choices);
 	const r = plan.report;
 	assert.equal(r.items, 6, "attachments aren't items");
-	assert.deepEqual(r.matched, { filename: 2, "citekey property": 0, "Zotero link": 1, title: 1 });
+	assert.deepEqual(r.matched, { filename: 2, "citekey property": 0, "Zotero link": 1, identifier: 0, title: 1 });
 	const by = Object.fromEntries(plan.updates.map((u) => [u.note.basename, u]));
 	assert.equal(by.doeExampleBook2006.matchedBy, "filename");
 	assert.equal(by.brokenYaml2023.matchedBy, "filename");
