@@ -1,4 +1,4 @@
-import { App, TFile, normalizePath, parseYaml } from "obsidian";
+import { App, TFile, getFrontMatterInfo, normalizePath, parseYaml } from "obsidian";
 import {
 	DupNote,
 	DuplicateGroup,
@@ -20,6 +20,8 @@ type Frontmatter = Record<string, unknown>;
 
 /** The health report note's name; it sits beside the references folder. */
 export const REPORT_NAME = "Stacks health check";
+/** The property that marks a note as the health check's own report, safe to rewrite. */
+export const REPORT_MARKER = { key: "stacks", value: "health-check" } as const;
 
 /** What merging one duplicate into another will do, for the preview. */
 export interface MergePlan {
@@ -30,6 +32,8 @@ export interface MergePlan {
 	paragraphsAdded: number;
 	/** Notes with links to `drop`, and how many each has. */
 	links: { file: TFile; count: number }[];
+	/** `drop`'s text when the preview was made; the merge stops if it changed since. */
+	dropText: string;
 }
 
 export interface MergeResult {
@@ -44,6 +48,9 @@ const listOf = (v: unknown): unknown[] => (Array.isArray(v) ? v : v === undefine
  * reads; each repair is a separate call made after the person has seen a preview.
  */
 export class Maintenance {
+	/** What merging last wrote to each note while repointing links, to tell those edits from the person's. */
+	private written = new WeakMap<TFile, string>();
+
 	constructor(
 		private app: App,
 		private library: Library,
@@ -134,24 +141,43 @@ export class Maintenance {
 		);
 	}
 
-	/** Where the report note goes: beside the references folder. */
-	reportPath(): string {
+	/** Where the report note goes: beside the references folder ("… 1", "… 2" when taken). */
+	reportPath(n = 0): string {
 		const folder = normalizePath(this.settings().referencesFolder);
 		const parent = folder.includes("/") ? folder.slice(0, folder.lastIndexOf("/")) : "";
-		return normalizePath(`${parent}/${REPORT_NAME}.md`);
+		return normalizePath(`${parent}/${REPORT_NAME}${n ? ` ${n}` : ""}.md`);
 	}
 
-	/** Write (or rewrite) the report note. The only file the health check writes. */
+	/** Whether a note is a report the health check wrote: its frontmatter has REPORT_MARKER. */
+	private async isOwnReport(file: TFile): Promise<boolean> {
+		const info = getFrontMatterInfo(await this.app.vault.read(file));
+		if (!info.exists) return false;
+		try {
+			const fm: unknown = parseYaml(info.frontmatter);
+			return !!fm && typeof fm === "object" && (fm as Frontmatter)[REPORT_MARKER.key] === REPORT_MARKER.value;
+		} catch {
+			return false;
+		}
+	}
+
+	/**
+	 * Write (or rewrite) the report note. The only file the health check writes. A note at the
+	 * report path that the check didn't write is left alone; the report goes to a free name.
+	 */
 	async writeReport(report: HealthReport, commands: ReportContext["commands"]): Promise<TFile> {
 		const s = this.settings();
-		const md = healthReportMarkdown(report, { date: localDate(new Date(), true), staleDays: s.healthStaleDays, commands, properties: s.propertyNames });
-		const path = this.reportPath();
-		const existing = this.app.vault.getAbstractFileByPath(path);
-		if (existing instanceof TFile) {
-			await this.app.vault.process(existing, () => md);
-			return existing;
+		const md =
+			`---\n${REPORT_MARKER.key}: ${REPORT_MARKER.value}\n---\n` +
+			healthReportMarkdown(report, { date: localDate(new Date(), true), staleDays: s.healthStaleDays, commands, properties: s.propertyNames });
+		for (let n = 0; ; n++) {
+			const path = this.reportPath(n);
+			const existing = this.app.vault.getAbstractFileByPath(path);
+			if (!existing) return this.app.vault.create(path, md);
+			if (existing instanceof TFile && (await this.isOwnReport(existing))) {
+				await this.app.vault.process(existing, () => md);
+				return existing;
+			}
 		}
-		return this.app.vault.create(path, md);
 	}
 
 	/**
@@ -211,25 +237,33 @@ export class Maintenance {
 	/** What merging `drop` into `keep` would change. Reads only. */
 	async planMerge(keep: TFile, drop: TFile): Promise<MergePlan> {
 		const { changes } = mergeFrontmatter(this.library.frontmatter(keep), this.library.frontmatter(drop), this.mergeOptions());
-		const body = mergeBody(splitNote(await this.app.vault.read(keep)).body, splitNote(await this.app.vault.read(drop)).body, {
+		const dropText = await this.app.vault.read(drop);
+		const body = mergeBody(splitNote(await this.app.vault.read(keep)).body, splitNote(dropText).body, {
 			dropName: drop.basename,
 			annotationsHeading: this.settings().annotationsHeading,
 		});
-		return { keep, drop, changes, annotationsCopied: body.annotationsCopied, paragraphsAdded: body.paragraphsAdded, links: await this.linksTo(drop, [keep]) };
+		return { keep, drop, changes, annotationsCopied: body.annotationsCopied, paragraphsAdded: body.paragraphsAdded, links: await this.linksTo(drop, [keep]), dropText };
 	}
 
 	/**
 	 * Merge `drop` into `keep`: fill and combine properties, copy what only `drop`'s body has,
 	 * point every link to `drop` at `keep`, then move `drop` to the trash. Works from the notes
-	 * as they are now, so edits made since the preview are respected.
+	 * as they are now, so edits to `keep` since the preview are respected. If `drop` changed
+	 * since the preview, nothing is merged: it would go to the trash with edits nobody saw.
 	 */
 	async merge(plan: MergePlan): Promise<MergeResult> {
 		const { keep, drop } = plan;
 		return this.library.exclusive(async () => {
 			if (!this.library.exists(keep) || !this.library.exists(drop)) throw new Error(`${keep.basename} or ${drop.basename} was moved or deleted. Nothing was merged.`);
 			const options = this.mergeOptions();
-			const dropFm = { ...this.library.frontmatter(drop) };
-			const dropBody = splitNote(await this.app.vault.read(drop)).body;
+			// Properties and body from the same fresh text: the metadata cache can lag a save.
+			const dropText = await this.app.vault.read(drop);
+			if (dropText !== plan.dropText && dropText !== this.written.get(drop))
+				throw new Error(`${drop.basename} changed since the preview. Nothing was merged; review the merge again.`);
+			const info = getFrontMatterInfo(dropText);
+			const parsed: unknown = info.exists ? parseYaml(info.frontmatter) : null;
+			const dropFm: Frontmatter = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? { ...(parsed as Frontmatter) } : {};
+			const dropBody = splitNote(dropText).body;
 			await this.app.fileManager.processFrontMatter(keep, (fm: Frontmatter) => {
 				Object.assign(fm, mergeFrontmatter(fm, dropFm, options).updates);
 			});
@@ -246,6 +280,7 @@ export class Maintenance {
 				await this.app.vault.process(file, (text) => {
 					const r = rewriteLinks(text, (l) => this.pointsTo(l, file, drop), linktext);
 					count = r.count;
+					if (r.count) this.written.set(file, r.text);
 					return r.text;
 				});
 				linksChanged += count;

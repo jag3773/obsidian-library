@@ -49,6 +49,29 @@ test("retarget keeps embeds, subpaths, aliases and a Markdown link's .md", () =>
 	assert.equal(retarget(md, "References/new name"), "[text](References/new%20name.md#Sec)");
 });
 
+test("findLinks reads Markdown destinations with parentheses, angle brackets and titles", () => {
+	const text = [
+		"[Smith](References/Smith%20(2020).md)",
+		"[esc](a\\(1\\).md)",
+		'[angle](<My note (draft).md> "Title")',
+		"[t](plain.md 'Title')",
+		"[p](nested.md (Title))",
+		"[unencoded space, not a link](Smith (2020).md)",
+	].join(" ");
+	const links = findLinks(text);
+	assert.deepEqual(
+		links.map((l) => [l.target, l.original]),
+		[
+			["References/Smith (2020).md", "[Smith](References/Smith%20(2020).md)"],
+			["a(1).md", "[esc](a\\(1\\).md)"],
+			["My note (draft).md", '[angle](<My note (draft).md> "Title")'],
+			["plain.md", "[t](plain.md 'Title')"],
+			["nested.md", "[p](nested.md (Title))"],
+		]
+	);
+	assert.equal(retarget(links[0], "References/Jones (2020)"), "[Smith](References/Jones%20%282020%29.md)");
+});
+
 test("rewriteLinks changes only the links the predicate picks, and counts them", () => {
 	const text = "[[old]] [[other]] [[old|Old]] ![[old]]";
 	const r = rewriteLinks(text, (l) => l.target === "old", "new");

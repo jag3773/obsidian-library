@@ -45,6 +45,19 @@ test("the health check reads only, then writes just its report beside the refere
 	assert.equal((await maintenance.writeReport(r, commands)).path, report.path);
 });
 
+test("the health check doesn't overwrite a note of the person's at the report path", async () => {
+	const { app, maintenance } = setup();
+	const mine = app.vault.addFile("Stacks health check.md", "My own notes about the library.\n");
+	const r = await maintenance.check();
+	const report = await maintenance.writeReport(r, commands);
+	assert.equal(report.path, "Stacks health check 1.md");
+	assert.equal(await app.vault.read(mine), "My own notes about the library.\n");
+	assert.match(await app.vault.read(report), /^---\nstacks: health-check\n---\n# Library health check/);
+	// The next run rewrites its own report there, not the person's note.
+	assert.equal((await maintenance.writeReport(r, commands)).path, report.path);
+	assert.equal(await app.vault.read(mine), "My own notes about the library.\n");
+});
+
 test("relinking points pdf at the PDF named after the citekey and fixes the attachments entry", async () => {
 	const { app, maintenance } = setup();
 	const note = app.vault.addFile("References/smith2020.md", md({ citekey: "smith2020", pdf: "[[old.pdf]]", attachments: ["[[old.pdf]]", "[[notes.txt]]"] }));
@@ -116,4 +129,47 @@ test("merge refuses when a note was deleted after the preview", async () => {
 	const plan = await maintenance.planMerge(keep, drop);
 	await app.fileManager.trashFile(drop);
 	await assert.rejects(maintenance.merge(plan), /moved or deleted/);
+});
+
+test("merge repoints a Markdown link whose filename has parentheses", async () => {
+	const { app, maintenance } = setup();
+	const keep = app.vault.addFile("References/smith2020.md", md({ citekey: "smith2020", doi: "10.1000/x" }));
+	const drop = app.vault.addFile("References/Smith (2020).md", md({ citekey: "smith2020b", doi: "10.1000/x" }));
+	const draft = app.vault.addFile("Drafts/essay.md", "See [Smith](References/Smith%20(2020).md).\n");
+	const plan = await maintenance.planMerge(keep, drop);
+	assert.deepEqual(plan.links.map((l) => [l.file.path, l.count]), [["Drafts/essay.md", 1]]);
+	assert.deepEqual(await maintenance.merge(plan), { linksChanged: 1, filesChanged: 1 });
+	assert.equal(await app.vault.read(draft), "See [Smith](smith2020.md).\n");
+});
+
+test("merge reads the dropped note's properties fresh, and stops if it changed since the preview", async () => {
+	const { app, maintenance } = setup();
+	const keep = app.vault.addFile("References/a.md", md({ citekey: "a", doi: "10.1000/x" }, "Body.\n"));
+	const drop = app.vault.addFile("References/b.md", md({ citekey: "b", doi: "10.1000/x" }, "Body.\n"));
+	// Saved just before the preview; the metadata cache hasn't caught up when the merge runs.
+	app.vault.write(drop, md({ citekey: "b", doi: "10.1000/x", publisher: "P" }, "Body.\n"));
+	await maintenance.merge(await maintenance.planMerge(keep, drop));
+	assert.match(await app.vault.read(keep), /"publisher":"P"/);
+
+	// Saved after the preview: nothing is merged and the note isn't trashed.
+	const keep2 = app.vault.addFile("References/c.md", md({ citekey: "c", doi: "10.1000/y" }, "Body.\n"));
+	const drop2 = app.vault.addFile("References/d.md", md({ citekey: "d", doi: "10.1000/y" }, "Body.\n"));
+	const plan2 = await maintenance.planMerge(keep2, drop2);
+	app.vault.write(drop2, md({ citekey: "d", doi: "10.1000/y", publisher: "Q" }, "Body.\n"));
+	const keepBefore = await app.vault.read(keep2);
+	await assert.rejects(maintenance.merge(plan2), /d changed since the preview/);
+	assert.ok(app.vault.getAbstractFileByPath(drop2.path));
+	assert.equal(await app.vault.read(keep2), keepBefore);
+});
+
+test("merging a group of three: a link one duplicate gains from the first merge doesn't stop the second", async () => {
+	const { app, maintenance } = setup();
+	const keep = app.vault.addFile("References/a.md", md({ citekey: "a", doi: "10.1000/x" }, "Body.\n"));
+	const b = app.vault.addFile("References/b.md", md({ citekey: "b", doi: "10.1000/x" }, "Body.\n"));
+	const c = app.vault.addFile("References/c.md", md({ citekey: "c", doi: "10.1000/x" }, "See [[b]].\n"));
+	const plans = [await maintenance.planMerge(keep, b), await maintenance.planMerge(keep, c)];
+	await maintenance.merge(plans[0]);
+	await maintenance.merge(plans[1]);
+	assert.deepEqual((app.fileManager as any).trashed, [b.path, c.path]);
+	assert.match(await app.vault.read(keep), /See \[\[a\]\]\./);
 });
