@@ -224,13 +224,17 @@ export const SYNONYMS: Record<PropertyKey, string[]> = {
 	type: ["itemType", "item-type", "kind", "category", "format"],
 	title: ["name"],
 	authors: ["author", "creators", "creator", "by"],
-	year: ["date", "published", "publishDate", "publicationYear", "issued"],
+	year: ["publicationYear", "yearPublished", "pubYear"],
+	// Web Clipper writes the publication date as "published".
+	published: ["date", "datePublished", "publishDate", "publicationDate", "pubDate", "issued", "releaseDate"],
 	publisher: ["publishedBy"],
 	// Not "source": Web Clipper uses that for the URL.
 	journal: ["publication", "publicationTitle", "container", "containerTitle", "site", "siteName"],
 	isbn: ["ISBN"],
 	doi: ["DOI"],
 	url: ["source", "link", "href", "website"],
+	// Web Clipper writes the page summary as "description"; Zotero calls it abstractNote.
+	abstract: ["description", "abstractNote", "summary", "synopsis"],
 	status: ["state", "reading", "readingStatus"],
 	pdf: ["file", "pdfFile"],
 	attachments: ["files", "attachment"],

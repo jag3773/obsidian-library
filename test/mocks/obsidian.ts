@@ -1,3 +1,4 @@
+import "../setup-dom";
 // A small in-memory stand-in for the parts of the Obsidian API the plugin uses, so vault-level
 // behaviour (Library, Inbox, the plugin's timers) can be tested under node:test.
 // Frontmatter is stored as JSON (valid YAML). The metadata cache updates on a later macrotask,

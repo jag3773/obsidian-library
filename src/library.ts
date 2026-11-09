@@ -78,6 +78,14 @@ export interface AttachmentNaming {
  * regenerateCitekey) must run inside exclusive(), together with any duplicate check
  * they depend on, so that concurrent captures can't pick the same key or file.
  */
+/** Equal property values (strings, numbers, lists) as YAML would hold them. */
+function sameValue(a: unknown, b: unknown): boolean {
+	return a === b || JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+}
+
+/** Bibliographic fields a lookup knows better than a clipper's guess from the page. */
+const CLIPPED_FIELDS: PropertyKey[] = ["type", "title", "authors", "year", "published", "publisher", "journal", "isbn", "doi", "abstract"];
+
 export class Library {
 	private queue: Promise<unknown> = Promise.resolve();
 	private reservations: Reservation[] = [];
@@ -239,18 +247,28 @@ export class Library {
 			[p("isbn")]: data.isbn,
 			[p("doi")]: data.doi,
 			[p("url")]: data.url,
+			[p("abstract")]: data.abstract,
 			[p("status")]: status,
 			[p("added")]: moment().format("YYYY-MM-DD"),
 		};
+		// Older settings may map the year to a date property; the full date wins there.
+		if (data.date) out[p("published")] = data.date;
 		for (const k of Object.keys(out)) if (isEmpty(out[k])) delete out[k];
 		return out;
 	}
 
-	/** Fill empty properties only. Never overwrites a value the user set. */
-	async fillProperties(file: TFile, props: Frontmatter): Promise<void> {
+	/**
+	 * Fill empty properties. A property in `replaceIfUnchanged` is also overwritten when it
+	 * still holds exactly that value (what a clipper wrote before a lookup started); a value
+	 * changed since then is the user's edit and is kept.
+	 */
+	async fillProperties(file: TFile, props: Frontmatter, replaceIfUnchanged: Frontmatter = {}): Promise<void> {
 		this.assertActive();
 		await this.app.fileManager.processFrontMatter(file, (fm: Frontmatter) => {
-			for (const [k, v] of Object.entries(props)) if (isEmpty(fm[k])) fm[k] = v;
+			for (const [k, v] of Object.entries(props)) {
+				const unchanged = Object.prototype.hasOwnProperty.call(replaceIfUnchanged, k) && sameValue(fm[k], replaceIfUnchanged[k]);
+				if (isEmpty(fm[k]) || unchanged) fm[k] = v;
+			}
 		});
 	}
 
@@ -267,6 +285,7 @@ export class Library {
 			title: e(data.title),
 			authors: data.authors.map(escapeMarkdown),
 			year: data.year,
+			published: e(data.date),
 			publisher: e(data.publisher),
 			journal: e(data.journal),
 			url: markdownSafeUrl(data.url),
@@ -330,9 +349,12 @@ export class Library {
 	 * and move it into the references folder under the configured filename.
 	 * `captureUrls` are other URLs the note was captured from, counted for duplicate
 	 * detection until the cache indexes the note (afterwards its url properties are read).
+	 * `clipped` is the note's frontmatter as a clipper wrote it, read before the lookup: its
+	 * bibliographic values (page title, a truncated description) are replaced by looked-up
+	 * ones unless they were edited since. The URL and status are kept.
 	 * Call inside exclusive().
 	 */
-	async complete(file: TFile, data: ReferenceData | null, status?: string, captureUrls: string[] = []): Promise<TFile> {
+	async complete(file: TFile, data: ReferenceData | null, status?: string, captureUrls: string[] = [], clipped?: Frontmatter): Promise<TFile> {
 		const fm = this.frontmatter(file);
 		const existingKey = String(fm[this.prop("citekey")] ?? "").trim();
 		const basis: ReferenceData = data ?? {
@@ -344,7 +366,9 @@ export class Library {
 		};
 		const citekey = existingKey || this.makeCitekey(basis, file);
 		this.reserve(file, citekey, basis, captureUrls);
-		await this.fillProperties(file, this.propertiesFor(basis, citekey, isEmpty(fm[this.prop("status")]) ? status : undefined));
+		const replace: Frontmatter = {};
+		if (clipped) for (const k of CLIPPED_FIELDS) replace[this.prop(k)] = clipped[this.prop(k)];
+		await this.fillProperties(file, this.propertiesFor(basis, citekey, isEmpty(fm[this.prop("status")]) ? status : undefined), replace);
 		// Notes already inside the references folder keep their subfolder.
 		const folder = this.isReference(file) ? file.parent?.path ?? this.s.referencesFolder : this.s.referencesFolder;
 		return this.moveTo(file, folder, this.formatName(this.s.filenameFormat, citekey, basis));

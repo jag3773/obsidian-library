@@ -97,7 +97,9 @@ test("fields match exact names first, then synonyms, each name used once", () =>
 	assert.equal(m.citekey, "Citation Key");
 	assert.equal(m.title, "Title");
 	assert.equal(m.authors, "author");
-	assert.equal(m.year, "date");
+	assert.equal(m.published, "date", "a date property holds the publication date");
+	assert.equal(m.year, "year");
+	assert.equal(m.abstract, "abstract");
 	assert.equal(m.url, "url", "exact name wins over the synonym source");
 	assert.equal(m.journal, "journal", "source is never taken as the journal");
 	assert.equal(m.doi, "DOI");
@@ -136,4 +138,14 @@ test("reading a starter base back recovers every custom mapping", () => {
 	const config = parse(stringify(starterBase("Lib", names)));
 	const again = matchProperties(basePropertyNames(config), baseDisplayNames(config));
 	assert.deepEqual(again, names);
+});
+
+test("Web Clipper's published and description properties are recognized", () => {
+	const m = matchProperties(["title", "source", "author", "published", "created", "description", "tags"]);
+	assert.equal(m.published, "published");
+	assert.equal(m.abstract, "description");
+	assert.equal(m.authors, "author");
+	assert.equal(m.url, "source");
+	assert.equal(m.added, "created");
+	assert.equal(m.year, "year", "the year isn't taken from a full date property");
 });

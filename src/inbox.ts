@@ -3,9 +3,11 @@ import { familyFromFullName } from "./citekey";
 import { findIdentifierInText } from "./identifiers";
 import { Library } from "./library";
 import { Fetcher } from "./metadata/http";
+import { parseDate, yearOf } from "./metadata/dates";
 import { lookup } from "./metadata/lookup";
 import { ReferenceData } from "./metadata/types";
 import { readPdf } from "./pdf";
+import { PropertyKey } from "./properties";
 import { LibrarySettings } from "./settings";
 
 /** Handles files that land in the inbox folder. */
@@ -47,12 +49,12 @@ export class Inbox {
 			return null;
 		}
 		const data = await lookup(this.fetch, { kind: "url", value: url }, { crossrefMailto: s.crossrefMailto });
-		// Effective metadata: the lookup result with the clip's URL kept, or a fallback when the
-		// lookup failed (offline, HTTP error). The URL ends up in the configured url property
-		// even if the clipper used "source".
-		const basis: ReferenceData = data
-			? { ...data, url: data.url ?? url }
-			: { type: "webpage", title: String(fm.title ?? file.basename), authors: [], familyNames: [], url, source: "note" };
+		// Effective metadata: the lookup result with the clip's URL kept. What the clipper saved
+		// (read in the browser, so it works on sites that block the plugin's request) fills any
+		// gaps, or stands in when the lookup failed. The URL ends up in the configured url
+		// property even if the clipper used "source".
+		const clip = fromClip(fm, s.propertyNames, file.basename);
+		const basis: ReferenceData = data ? fillFromClip({ ...data, url: data.url ?? url }, clip) : { ...clip, url };
 		return this.library.exclusive(async () => {
 			if (!this.stillWaiting(file)) return null;
 			// Check the enriched identifiers and the clip's own URL, whether or not the lookup worked.
@@ -63,7 +65,7 @@ export class Inbox {
 			}
 			// The clip keeps the URL property it came from, so later captures of the same original
 			// URL still match after the mapped url becomes the canonical one.
-			const moved = await this.library.complete(file, basis, s.clipStatus, [url]);
+			const moved = await this.library.complete(file, basis, s.clipStatus, [url], data ? fm : undefined);
 			new Notice(`Library: filed ${moved.basename}`);
 			return moved;
 		});
@@ -112,4 +114,55 @@ export class Inbox {
 			return note;
 		});
 	}
+}
+
+const str = (v: unknown): string =>
+	typeof v === "string" ? v.trim() : typeof v === "number" ? String(v) : v instanceof Date && !isNaN(v.getTime()) ? v.toISOString().slice(0, 10) : "";
+
+/** Names in a property value: a list, a string of [[links]], or one plain name. */
+function names(v: unknown): string[] {
+	const items = Array.isArray(v) ? v.map(str) : [str(v)];
+	return items
+		.flatMap((item) => {
+			const links = [...item.matchAll(/\[\[([^\]|#]+)(?:[|#][^\]]*)?\]\]/g)].map((m) => m[1].trim());
+			return links.length ? links : [item];
+		})
+		.filter(Boolean);
+}
+
+/**
+ * Metadata a clipper already wrote into the note: under the library's property names, or
+ * Web Clipper's defaults (title, author, published, description).
+ */
+export function fromClip(fm: Record<string, unknown>, props: Record<PropertyKey, string>, fallbackTitle: string): ReferenceData {
+	const first = (...keys: string[]) => keys.map((k) => fm[k]).find((v) => (Array.isArray(v) ? v.length : str(v)));
+	const authors = names(first(props.authors, "author", "authors", "creator"));
+	const date = parseDate(str(first(props.published, "published", "date")) || undefined);
+	return {
+		type: "webpage",
+		title: str(first(props.title, "title")) || fallbackTitle,
+		authors,
+		familyNames: authors.map(familyFromFullName),
+		date,
+		year: yearOf(date),
+		abstract: str(first(props.abstract, "description", "abstract", "summary")) || undefined,
+		source: "note",
+	};
+}
+
+/** found, with empty authors, date and abstract taken from the clip. */
+function fillFromClip(found: ReferenceData, clip: ReferenceData): ReferenceData {
+	const out = { ...found };
+	// A page without a title comes back titled with its URL; the clip's title is better.
+	if (/^https?:\/\//i.test(out.title) && clip.title) out.title = clip.title;
+	if (!out.authors.length && clip.authors.length) {
+		out.authors = clip.authors;
+		out.familyNames = clip.familyNames;
+	}
+	if (!out.date && clip.date) {
+		out.date = clip.date;
+		out.year ??= clip.year;
+	}
+	out.abstract ??= clip.abstract;
+	return out;
 }

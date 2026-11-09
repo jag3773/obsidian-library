@@ -1,4 +1,5 @@
 import { Fetcher, getJson } from "./http";
+import { parseDate } from "./dates";
 import { ReferenceData, joinTitle, stripTags, yearFrom } from "./types";
 
 /** CSL / Crossref work types mapped to this plugin's type vocabulary. */
@@ -64,6 +65,7 @@ export function parseCsl(work: CslWork | null, doi: string, source: string): Ref
 		title: joinTitle(title, first(work.subtitle)),
 		authors,
 		familyNames,
+		date: dateParts?.length ? parseDate(dateParts.slice(0, 3).join("-")) : undefined,
 		year: yearFrom(dateParts?.[0]),
 		journal: type === "book" ? undefined : first(work["container-title"]),
 		publisher: work.publisher,

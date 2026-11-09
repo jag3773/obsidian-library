@@ -23,8 +23,9 @@ Zotero has helped researchers collect, organize, and cite their work for years. 
 ## Available today
 
 - **Save a source by identifier.** Paste an ISBN, DOI, arXiv ID, or URL. Library looks up metadata, checks for an existing reference, creates a note, and opens it.
-- **Turn an inbox into a library.** Drop in a Web Clipper note or a PDF. Clipped notes are enriched and filed. PDFs are checked for a DOI or ISBN in their opening pages, paired with a reference note, and moved into your attachments folder. When a lookup cannot identify a PDF, its document metadata or filename provides a starting point.
+- **Turn an inbox into a library.** Drop in a Web Clipper note or a PDF. Clipped notes are enriched and filed; what Web Clipper saved (author, published date, description) fills anything the lookup can't find, which covers sites that turn Library away. Looked-up values replace the guesses Web Clipper made from the page, such as its page title; the URL and status are kept. PDFs are checked for a DOI or ISBN in their opening pages, paired with a reference note, and moved into your attachments folder. When a lookup cannot identify a PDF, its document metadata or filename provides a starting point.
 - **Complete a reference as you write.** Add an ISBN, DOI, or URL property to a note in your references folder. Library can fill missing metadata and name the note for you. Metadata enrichment preserves populated properties and the existing note body.
+- **Start with the details that matter.** References come with a title, authors, publication date (`published`), year, abstract, and, where the source has them, publisher, ISBN, or DOI. Book pages on Amazon, Goodreads, and Kobo, GitHub repositories, and news and blog articles are read the way Zotero's translators read them.
 - **Give sources useful citekeys.** Use a configurable Better BibTeX-style formula, with collision handling. The default is `auth.lower + shorttitle(3, 3) + year`. Citekey generation is available today; inserting and formatting citations is still ahead.
 - **Browse with Obsidian Bases.** Choose your library's `.base` file, or create a starter Base. Match fields to your vault's property names and browse your collection with tables, filters, and reading-status views.
 - **Make it fit your vault.** Configure folders, filenames, property mappings, note templates, statuses, and author links. Folder and template settings suggest matching vault paths as you type.
@@ -78,7 +79,7 @@ Download `main.js`, `manifest.json`, and `styles.css` from the same release. Put
 
 Open Library's settings and choose your references, attachments, and inbox folders. Under **Library base**, pick an existing `.base` file or press **Create base**.
 
-When a Base requires one folder, Library can use it as the references folder. Negated or ambiguous folder filters leave the configured destination unchanged. Review the field dropdowns so Library uses names such as `author`, `source`, or `Citation Key` the way your vault does. **Create base** preserves your mappings; **Re-read** refreshes the mapping from a selected Base.
+When a Base requires one folder, Library can use it as the references folder. Negated or ambiguous folder filters leave the configured destination unchanged. Review the field dropdowns so Library uses names such as `author`, `source`, or `Citation Key` the way your vault does. Web Clipper's `published` and `description` are recognized as the publication date and abstract. **Create base** preserves your mappings; **Re-read** refreshes the mapping from a selected Base.
 
 <details>
 <summary>Example Base to customize</summary>
@@ -112,7 +113,16 @@ views:
 
 ## Metadata and privacy
 
-Library uses Open Library and Google Books for ISBNs, Crossref and doi.org for DOIs, arXiv for arXiv IDs, and a web page's metadata for URLs. No API keys are required.
+Library uses Open Library and Google Books for ISBNs, Crossref and doi.org for DOIs, arXiv for arXiv IDs, GitHub's public API for repositories, and a web page's own metadata for other URLs. No API keys are required.
+
+For a web page, Library trusts the most specific source first:
+
+1. **Site readers** for Amazon, Goodreads, and Kobo book pages and GitHub repositories, which keep their best data outside the standard tags.
+2. **schema.org JSON-LD**, including a book's edition (`workExample`) and author references elsewhere in the page's data.
+3. **Standard tags:** Highwire `citation_*` (used by Google Scholar), Dublin Core, PRISM, and Open Graph.
+4. **The page body,** as a last resort: bylines (microdata, `rel="author"`, author-page links) and the article's `<time>`.
+
+A page that names a DOI is looked up through Crossref. A book page that names an ISBN gets a missing date, publisher, or description from Open Library and Google Books; the page's own values win. A bot check served in place of the page (Kobo, Cloudflare, an Amazon captcha) is recognized and ignored.
 
 Note bodies and PDF text are processed locally. Lookups send the identifier or URL to the relevant service or website; identifiers discovered in a PDF may also be looked up. An optional Crossref contact email is sent only when you configure it. Library has no telemetry or required cloud account.
 

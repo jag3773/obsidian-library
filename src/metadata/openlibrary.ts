@@ -1,5 +1,6 @@
 import { familyFromFullName } from "../citekey";
 import { Fetcher, getJson } from "./http";
+import { parseDate, yearOf } from "./dates";
 import { ReferenceData, joinTitle, yearFrom } from "./types";
 
 interface OLBook {
@@ -21,7 +22,8 @@ export function parseOpenLibrary(json: Record<string, OLBook> | null, isbn: stri
 		title: joinTitle(book.title, book.subtitle),
 		authors,
 		familyNames: authors.map(familyFromFullName),
-		year: yearFrom(book.publish_date),
+		date: parseDate(book.publish_date),
+		year: yearOf(parseDate(book.publish_date)) ?? yearFrom(book.publish_date),
 		publisher: book.publishers?.[0]?.name,
 		isbn,
 		source: "Open Library",

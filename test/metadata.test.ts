@@ -1,3 +1,4 @@
+import "./setup-dom";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseArxiv } from "../src/metadata/arxiv";
@@ -103,7 +104,8 @@ test("og:url is only used when it is an absolute http(s) URL", () => {
 
 test("numeric entities decode, and out-of-range ones don't throw", () => {
 	const r = parseWebpage(`<meta name="description" content="it&#x27;s &#8212; ok &#99999999;">`, "https://example.com");
-	assert.equal(r.abstract, "it's — ok &#99999999;");
+	// As in a browser, an out-of-range code point becomes the replacement character.
+	assert.equal(r.abstract, "it's — ok \uFFFD");
 });
 
 test("data-name attributes are not mistaken for name", () => {
