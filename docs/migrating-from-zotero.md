@@ -1,8 +1,8 @@
 # How to migrate from Zotero
 
-This guide walks through moving an established Zotero library into an Obsidian vault so that Library and Obsidian Bases replace Zotero for day-to-day work. It follows a real migration of a personal library of a few thousand items: books, articles, web pages, videos and documents, many with PDFs and highlights.
+This guide walks through moving an established Zotero library into an Obsidian vault so that Stacks and Obsidian Bases replace Zotero for day-to-day work. It follows a real migration of a personal library of a few thousand items: books, articles, web pages, videos and documents, many with PDFs and highlights.
 
-Library does not yet have a one-click importer; that work is tracked in [#18](https://github.com/jag3773/obsidian-library/issues/18). Until it lands, this is the manual path. It is safe to follow in stages, and you can stop after any stage with a working vault.
+Stacks does not yet have a one-click importer; that work is tracked in [#18](https://github.com/jag3773/obsidian-stacks/issues/18). Until it lands, this is the manual path. It is safe to follow in stages, and you can stop after any stage with a working vault.
 
 ## The approach in one paragraph
 
@@ -24,14 +24,14 @@ Before changing anything, write down each job Zotero does in your workflow and d
 
 | Job | In Zotero | In the vault |
 |---|---|---|
-| Capture metadata | Browser connector | Library: **Add reference** (ISBN, DOI, arXiv, URL), Web Clipper into the inbox |
+| Capture metadata | Browser connector | Stacks: **Add reference** (ISBN, DOI, arXiv, URL), Web Clipper into the inbox |
 | Stable identifier | Better BibTeX citekey | Same citekey formula, used as the note filename |
-| File PDFs | ZotFile / attachment renaming | Library files inbox PDFs into the attachments folder by citekey |
+| File PDFs | ZotFile / attachment renaming | Stacks files inbox PDFs into the attachments folder by citekey |
 | Collections, saved searches | Zotero UI | `collections` and `status` properties, plus Base views |
 | Reading queue | A "to read" collection or tag | `status: queued` |
-| Highlights into notes | Zotero Integration plugin | Planned: [#22](https://github.com/jag3773/obsidian-library/issues/22), [#29](https://github.com/jag3773/obsidian-library/issues/29) |
-| Citations | Better BibTeX export | Planned: [#19](https://github.com/jag3773/obsidian-library/issues/19), [#20](https://github.com/jag3773/obsidian-library/issues/20) |
-| Full-text PDF search | Zotero index | Omnisearch + Text Extractor plugins ([#25](https://github.com/jag3773/obsidian-library/issues/25)) |
+| Highlights into notes | Zotero Integration plugin | Planned: [#22](https://github.com/jag3773/obsidian-stacks/issues/22), [#29](https://github.com/jag3773/obsidian-stacks/issues/29) |
+| Citations | Better BibTeX export | Planned: [#19](https://github.com/jag3773/obsidian-stacks/issues/19), [#20](https://github.com/jag3773/obsidian-stacks/issues/20) |
+| Full-text PDF search | Zotero index | Omnisearch + Text Extractor plugins ([#25](https://github.com/jag3773/obsidian-stacks/issues/25)) |
 | Shared group libraries | Zotero groups | Out of scope; share a vault instead |
 
 If a job you rely on is still "planned", keep Zotero for that one job during the transition.
@@ -68,7 +68,7 @@ Only write a property when it has a value, so notes don't fill up with empty key
 1. In Zotero, choose **File → Export Library…**
 2. Choose the format **Better BibTeX JSON**. Leave **Export Files** unchecked; your PDFs are already on disk.
 3. Save the file somewhere in or near the vault.
-4. Copy your citekey formula from Zotero → Settings → Better BibTeX → Citation keys, and use the same formula in Library's settings.
+4. Copy your citekey formula from Zotero → Settings → Better BibTeX → Citation keys, and use the same formula in the Stacks settings.
 
 The export gives you what existing notes often lack: the real item type, ISBN and DOI, Zotero's date added, collection membership and attachment paths. Without it you can still derive properties from the notes themselves (the bibliography line, inline `Field::` lines, highlight dates), but item types and dates will be guesses.
 
@@ -197,18 +197,18 @@ Once you've reviewed the flagged items, delete the temporary properties and the 
 - **Scripts or AI agents** that found new items by modification time can use properties instead. For example: notes where `status` is `processed` and an `ingested` property is empty.
 - **Vault instructions or READMEs** that describe the old Zotero export as read-only should explain the new properties and Base.
 
-## Step 9: Set up Library for new items
+## Step 9: Set up Stacks for new items
 
-In Library's settings:
+In the Stacks settings:
 
-1. Point the references folder, attachments folder and inbox at your folders. If you made a Base, choose it under **Library base** so Library matches its property names.
+1. Point the references folder, attachments folder and inbox at your folders. If you made a Base, choose it under **Library base** so Stacks matches its property names.
 2. Use the same citekey formula as Better BibTeX, so new keys match old ones.
 3. Set your statuses, the default status for new items, and the status for web clips. Clips you want processed straight away can use your "processed" status; clips you only want to keep can use your catch-all.
-4. Try it: **Library: Add reference** with an ISBN or DOI, and drop a PDF or a Web Clipper note into the inbox.
+4. Try it: **Stacks: Add reference** with an ISBN or DOI, and drop a PDF or a Web Clipper note into the inbox.
 
 ## Step 10: Run both, then retire Zotero
 
-- For a few weeks, add new items through Library only. Anything you find yourself missing is either a setting or a gap worth an issue.
+- For a few weeks, add new items through Stacks only. Anything you find yourself missing is either a setting or a gap worth an issue.
 - **Don't re-import a converted item with Zotero Integration's "Import Literature Note".** It rewrites the whole file and drops the new properties.
 - When you're ready, archive a final Better BibTeX export and a copy of your Zotero data directory, then disable the Zotero Integration plugin.
 - Your PDFs can keep their filenames. If Zotero still points at them, leave them alone until Zotero is gone.
@@ -224,5 +224,5 @@ In Library's settings:
 - [ ] Full conversion run; note bodies verified unchanged
 - [ ] Citekey renames and duplicate merges done through link-safe operations
 - [ ] Temporary flags and views removed; old queries, scripts and agents updated
-- [ ] Library configured and tested on a new item
+- [ ] Stacks configured and tested on a new item
 - [ ] Zotero archived and retired

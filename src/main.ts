@@ -7,7 +7,7 @@ import { lookup } from "./metadata/lookup";
 import { LibrarySettingTab, LibrarySettings, withDefaults } from "./settings";
 import { AddReferenceModal } from "./ui/AddReferenceModal";
 
-const PREFIX = "Library";
+const PREFIX = "Stacks";
 const COMPLETE_DEBOUNCE_MS = 2000;
 const INBOX_SETTLE_MS = 750;
 const BUSY_SETTLE_MS = 1500;

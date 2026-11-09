@@ -1,5 +1,5 @@
 {
-  "name": "obsidian-library",
+  "name": "obsidian-stacks",
   "version": "0.2.0",
   "description": "A reference manager for Obsidian: one note per source, metadata in properties, Bases as the library view.",
   "main": "main.js",

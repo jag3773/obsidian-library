@@ -1,4 +1,4 @@
-# Library: Obsidian plugin specification
+# Stacks: Obsidian plugin specification
 
 A reference manager that lives entirely in an Obsidian vault. One Markdown note per source, metadata in properties, PDFs next to them, and Obsidian Bases as the library UI. MIT licensed.
 
@@ -197,7 +197,7 @@ The plugin sends identifiers (ISBN, DOI, arXiv ID, URL) to the public services i
 - MIT license, `LICENSE` in the repo root.
 - Build with esbuild, as in the Obsidian sample plugin. Release assets: `main.js`, `manifest.json`, `styles.css`.
 - Beta distribution through BRAT from a GitHub repo, then submission to the community directory after stage 2.
-- Plugin id `library` is provisional; check the community list for clashes before submitting.
+- Plugin id `stacks` (display name Stacks). The earlier `library` id clashed with an existing community plugin.
 
 ## 9. Open questions
 

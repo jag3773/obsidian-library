@@ -1,8 +1,8 @@
-.library-input {
+.stacks-input {
   width: 100%;
   min-width: 18em;
 }
 
-.library-invalid {
+.stacks-invalid {
   border-color: var(--text-error) !important;
 }
