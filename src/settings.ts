@@ -1,10 +1,12 @@
-import { App, PluginSettingTab, Setting, TFile, normalizePath, parseYaml, stringifyYaml } from "obsidian";
+import { App, Platform, PluginSettingTab, Setting, TFile, normalizePath, parseYaml, stringifyYaml } from "obsidian";
 import { BaseConfig, baseDisplayNames, baseFolder, basePropertyNames, matchProperties, starterBase, validateBase } from "./bases";
 import { parsePattern } from "./citekey";
 import type LibraryPlugin from "./main";
 import { PathSuggest, filePaths, folderPaths } from "./ui/PathSuggest";
 
-import { FIELD_LABELS, PROPERTY_KEYS, PropertyKey } from "./properties";
+import { DEFAULT_COLOR_MAP, parseColorMap } from "./annotations";
+import { DEFAULT_PROPERTY_NAMES, FIELD_LABELS, PROPERTY_KEYS, PropertyKey } from "./properties";
+import type { SentRecord } from "./roundtrip";
 
 export { PROPERTY_KEYS };
 export type { PropertyKey };
@@ -28,6 +30,30 @@ export interface LibrarySettings {
 	urlProperties: string[];
 	crossrefMailto: string;
 	propertyNames: Record<PropertyKey, string>;
+
+	// Annotations
+	/** Heading the generated annotations go under; the plugin owns only what is between its markers. */
+	annotationsHeading: string;
+	/** "color: callout, Label" lines. */
+	colorMap: string;
+	/** Status set after annotations are written, only moving forward in the status list. Empty: unchanged. */
+	statusAfterExtraction: string;
+	/** Re-extract when a PDF in the attachments folder changes (saved in Obsidian's viewer or PDF++). */
+	extractOnPdfSave: boolean;
+	/** Desktop only. Run on a PDF before extraction; {in} and {out} are replaced by file paths. */
+	preExtractionCommand: string;
+
+	// Reading round trip (desktop only)
+	/** Absolute folder a reading app syncs with. Empty: round trip off. */
+	tabletFolder: string;
+	/** Status that sends the PDF to the tablet folder. Empty: only the command sends. */
+	sendStatus: string;
+	/** Status set when a PDF comes back with changes. Empty: unchanged. */
+	returnStatus: string;
+	/** Also bring back PDFs in the tablet folder that Library didn't send, matched by attachment filename. */
+	tabletAdoptUnknown: boolean;
+	/** What was sent to the tablet folder, by file name there. Kept by the plugin, not shown. */
+	tabletSent: Record<string, SentRecord>;
 }
 
 export const DEFAULT_SETTINGS: LibrarySettings = {
@@ -47,24 +73,17 @@ export const DEFAULT_SETTINGS: LibrarySettings = {
 	completeOnPropertyEdit: true,
 	urlProperties: ["url", "source"],
 	crossrefMailto: "",
-	propertyNames: {
-		citekey: "citekey",
-		type: "type",
-		title: "title",
-		authors: "authors",
-		year: "year",
-		published: "published",
-		publisher: "publisher",
-		journal: "journal",
-		isbn: "isbn",
-		doi: "doi",
-		url: "url",
-		abstract: "abstract",
-		status: "status",
-		pdf: "pdf",
-		attachments: "attachments",
-		added: "added",
-	},
+	propertyNames: { ...DEFAULT_PROPERTY_NAMES },
+	annotationsHeading: "## Annotations",
+	colorMap: DEFAULT_COLOR_MAP,
+	statusAfterExtraction: "",
+	extractOnPdfSave: false,
+	preExtractionCommand: "",
+	tabletFolder: "",
+	sendStatus: "reading",
+	returnStatus: "reviewing",
+	tabletAdoptUnknown: false,
+	tabletSent: {},
 };
 
 /** Merge saved data over defaults, including the nested property map. */
@@ -75,6 +94,10 @@ export function withDefaults(saved: Partial<LibrarySettings> | null | undefined)
 	if (!Array.isArray(s.statuses)) s.statuses = [...DEFAULT_SETTINGS.statuses];
 	if (!Array.isArray(s.urlProperties)) s.urlProperties = [...DEFAULT_SETTINGS.urlProperties];
 	if (typeof s.libraryBase !== "string") s.libraryBase = "";
+	for (const k of ["annotationsHeading", "colorMap", "statusAfterExtraction", "preExtractionCommand", "tabletFolder", "sendStatus", "returnStatus"] as const)
+		if (typeof s[k] !== "string") s[k] = DEFAULT_SETTINGS[k];
+	const sent = s.tabletSent as unknown;
+	s.tabletSent = sent && typeof sent === "object" && !Array.isArray(sent) ? { ...(sent as Record<string, SentRecord>) } : {};
 	// An empty references folder would make every note in the vault a "reference" that
 	// automatic completion could rename and move.
 	if (typeof s.referencesFolder !== "string" || !s.referencesFolder.trim() || s.referencesFolder.trim() === "/")
@@ -271,7 +294,94 @@ export class LibrarySettingTab extends PluginSettingTab {
 			(v) => (s.crossrefMailto = v)
 		);
 
+		this.displayAnnotations(containerEl);
 		this.displayBase(containerEl);
+	}
+
+	/** Annotation extraction and the reading round trip. */
+	private displayAnnotations(containerEl: HTMLElement): void {
+		const s = this.plugin.settings;
+		const save = () => this.plugin.saveSettings();
+		const text = (name: string, desc: string, get: () => string, set: (v: string) => void, placeholder = "") =>
+			new Setting(containerEl)
+				.setName(name)
+				.setDesc(desc)
+				.addText((t) =>
+					t
+						.setPlaceholder(placeholder)
+						.setValue(get())
+						.onChange(async (v) => {
+							set(v.trim());
+							await save();
+						})
+				);
+
+		new Setting(containerEl).setName("Annotations").setHeading();
+		text(
+			"Annotations heading",
+			"Highlights and comments are written under this heading, between markers. Text outside the markers is never changed.",
+			() => s.annotationsHeading,
+			(v) => (s.annotationsHeading = v),
+			"## Annotations"
+		);
+		const colors = new Setting(containerEl)
+			.setName("Highlight colors")
+			.setDesc("One line per color: color: callout, Label. Colors: " + "yellow, red, green, blue, orange, purple, magenta, cyan, gray, or #rrggbb. " + "\"default\" covers other colors; \"note\" is used for sticky notes.");
+		colors.addTextArea((t) => {
+			t.inputEl.rows = 7;
+			t.setValue(s.colorMap).onChange(async (v) => {
+				const { errors } = parseColorMap(v);
+				t.inputEl.toggleClass("library-invalid", errors.length > 0);
+				t.inputEl.title = errors.length ? `Not understood: ${errors.join("; ")}` : "";
+				s.colorMap = v;
+				await save();
+			});
+		});
+		text(
+			"Status after extraction",
+			"Optional. Set after annotations are written, if the note is at an earlier status. Leave empty to keep the status.",
+			() => s.statusAfterExtraction,
+			(v) => (s.statusAfterExtraction = v),
+			"processed"
+		);
+		new Setting(containerEl)
+			.setName("Extract when a PDF is saved")
+			.setDesc("Re-extract when a PDF in the attachments folder changes, for example after highlighting in PDF++.")
+			.addToggle((t) =>
+				t.setValue(s.extractOnPdfSave).onChange(async (v) => {
+					s.extractOnPdfSave = v;
+					await save();
+				})
+			);
+		// Running commands and reaching folders outside the vault need the desktop app.
+		if (!Platform.isDesktopApp) return;
+		text(
+			"Pre-extraction command (desktop)",
+			"Optional. Runs on a PDF before extraction, from the vault folder. {in} is the PDF, {out} the file to write; if {out} is written, it replaces the PDF.",
+			() => s.preExtractionCommand,
+			(v) => (s.preExtractionCommand = v),
+			"python3 scripts/expand_highlights.py {in} {out}"
+		);
+
+		new Setting(containerEl).setName("Reading round trip (desktop)").setHeading();
+		text(
+			"Tablet folder",
+			"Absolute path of a folder your reading app syncs with. PDFs are copied there and their annotations brought back. Leave empty to turn this off.",
+			() => s.tabletFolder,
+			(v) => (s.tabletFolder = v),
+			"/Users/me/Dropbox/Apps/Books"
+		);
+		text("Send on status", "Copy the PDF to the tablet folder when a note's status changes to this. Leave empty to send only with the command.", () => s.sendStatus, (v) => (s.sendStatus = v), "reading");
+		text("Status when highlights return", "Set when a PDF comes back changed. Leave empty to keep the status.", () => s.returnStatus, (v) => (s.returnStatus = v), "reviewing");
+		new Setting(containerEl)
+			.setName("Bring back PDFs Library didn't send")
+			.setDesc("Also import PDFs already in the tablet folder whose name matches an attachment and which are newer than it.")
+			.addToggle((t) =>
+				t.setValue(s.tabletAdoptUnknown).onChange(async (v) => {
+					s.tabletAdoptUnknown = v;
+					await save();
+				})
+			);
 	}
 
 	/** The library base and the field mapping it drives. */
@@ -324,12 +434,13 @@ export class LibrarySettingTab extends PluginSettingTab {
 						: "Which property holds each field. Choose a base above to pick from its properties."
 			);
 		for (const key of PROPERTY_KEYS) {
-			const current = s.propertyNames[key] || key;
-			const options = [...new Set([current, ...reading.properties, key])];
+			const fallback = DEFAULT_PROPERTY_NAMES[key];
+			const current = s.propertyNames[key] || fallback;
+			const options = [...new Set([current, ...reading.properties, fallback])];
 			new Setting(el).setName(FIELD_LABELS[key]).addDropdown((d) => {
-				for (const o of options) d.addOption(o, reading.config && o === key && !reading.properties.includes(o) ? `${o} (new)` : o);
+				for (const o of options) d.addOption(o, reading.config && o === fallback && !reading.properties.includes(o) ? `${o} (new)` : o);
 				d.setValue(current).onChange(async (v) => {
-					s.propertyNames[key] = v || key;
+					s.propertyNames[key] = v || fallback;
 					await this.plugin.saveSettings();
 				});
 			});

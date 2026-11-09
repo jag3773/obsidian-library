@@ -6,3 +6,13 @@
 .library-invalid {
   border-color: var(--text-error) !important;
 }
+
+.library-conflict {
+  width: 100%;
+  margin: 0.5em 0 1em;
+}
+.library-conflict th,
+.library-conflict td {
+  padding: 0.25em 0.5em;
+  text-align: left;
+}

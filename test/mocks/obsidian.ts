@@ -158,6 +158,30 @@ export class Vault extends Events {
 		this.contents.set(f, content);
 		this.app.metadataCache.index(f, content);
 	}
+	adapter = new FileSystemAdapter();
+	async process(f: TFile, fn: (data: string) => string): Promise<string> {
+		const next = fn(String(this.contents.get(f) ?? ""));
+		this.write(f, next);
+		this.trigger("modify", f);
+		return next;
+	}
+	async modify(f: TFile, content: string): Promise<void> {
+		this.write(f, content);
+		this.trigger("modify", f);
+	}
+	async createBinary(path: string, data: ArrayBuffer): Promise<TFile> {
+		const p = normalizePath(path);
+		if (this.files.has(p)) throw new Error("File already exists.");
+		const f = this.addFile(p, data);
+		f.stat = { ctime: Date.now(), mtime: Date.now(), size: data.byteLength };
+		this.trigger("create", f);
+		return f;
+	}
+	async modifyBinary(f: TFile, data: ArrayBuffer): Promise<void> {
+		this.contents.set(f, data);
+		f.stat = { ...f.stat, mtime: Date.now(), size: data.byteLength };
+		this.trigger("modify", f);
+	}
 	async read(f: TFile): Promise<string> {
 		return String(this.contents.get(f) ?? "");
 	}
@@ -182,6 +206,15 @@ export class Vault extends Events {
 		this.trigger("delete", f);
 	}
 }
+
+export class FileSystemAdapter {
+	basePath: string | null = null;
+	getBasePath() {
+		return this.basePath ?? "";
+	}
+}
+
+export const Platform = { isDesktopApp: false, isMobile: false };
 
 export class MetadataCache extends Events {
 	cache = new Map<TFile, Record<string, unknown> | undefined>();

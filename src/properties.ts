@@ -18,6 +18,8 @@ export const PROPERTY_KEYS = [
 	"pdf",
 	"attachments",
 	"added",
+	"highlights",
+	"lastHighlighted",
 ] as const;
 export type PropertyKey = (typeof PROPERTY_KEYS)[number];
 
@@ -39,4 +41,12 @@ export const FIELD_LABELS: Record<PropertyKey, string> = {
 	pdf: "PDF",
 	attachments: "Attachments",
 	added: "Date added",
+	highlights: "Highlights",
+	lastHighlighted: "Last highlighted",
+};
+
+/** The property name each field uses unless the vault maps it elsewhere. */
+export const DEFAULT_PROPERTY_NAMES: Record<PropertyKey, string> = {
+	...(Object.fromEntries(PROPERTY_KEYS.map((k) => [k, k])) as Record<PropertyKey, string>),
+	lastHighlighted: "last_highlighted",
 };
