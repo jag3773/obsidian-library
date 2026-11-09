@@ -5,7 +5,8 @@ import assert from "node:assert/strict";
 import { App, Notice, TFile, http, parseYaml, pdf } from "obsidian";
 import { BatchActions } from "../src/batchActions";
 import { Inbox } from "../src/inbox";
-import { Library } from "../src/library";
+import { Cancelled, Library } from "../src/library";
+import { runBatch } from "../src/batch";
 import LibraryPlugin from "../src/main";
 import { LibrarySettings, withDefaults } from "../src/settings";
 
@@ -252,6 +253,61 @@ test("#27 completing metadata reports an offline lookup as an error for that not
 	assert.equal(f.path, "References/lovelaceBatchPaper1843.md");
 	const empty = app.vault.addFile("References/empty.md", "");
 	assert.equal(batch.skipReason(empty, { kind: "complete" }), "no ISBN, DOI, URL or title");
+});
+
+test("#27 unloading after the first item of a status batch leaves the second note unchanged", async () => {
+	const app = new App();
+	const settings = withDefaults({});
+	let alive = true;
+	const library = new Library(app as any, () => settings, () => alive);
+	const batch = new BatchActions(app as any, library, () => settings, fetcher, () => undefined);
+	const [, b, c] = library3(app);
+	const result = await runBatch(
+		[b, c],
+		async (f) => {
+			const changed = await batch.apply(f, { kind: "status", value: "processed" });
+			alive = false; // The plugin is disabled once the first note is written.
+			return changed;
+		},
+		{},
+		(e) => e instanceof Cancelled
+	);
+	await flush();
+	assert.equal(fm(app, b).status, "processed");
+	assert.equal(fm(app, c).status, "queued", "no write after unload");
+	assert.equal(result.cancelled, true);
+	assert.deepEqual(result.notRun, [c]);
+
+	// Unloaded while processFrontMatter is pending: the callback refuses to write.
+	alive = true;
+	const pending = batch.apply(c, { kind: "add-collection", link: "[[Climate]]" });
+	alive = false;
+	await assert.rejects(pending, Cancelled);
+	await flush();
+	assert.equal(fm(app, c).collections, undefined);
+});
+
+test("#27 a batch completion skips a note whose identifier changed during the lookup", async () => {
+	const { app, batch } = setup();
+	const f = app.vault.addFile("References/draft.md", `---\n{"doi":"10.1000/old"}\n---\n`);
+	let release!: () => void;
+	const gate = new Promise<void>((r) => (release = r));
+	crossref("10.1000/old", "Old Paper");
+	const answer = http.handler;
+	http.handler = async (p) => {
+		await gate;
+		return answer(p);
+	};
+	const pending = batch.apply(f, { kind: "complete" });
+	await flush();
+	// The person corrects the DOI while the lookup is pending.
+	app.vault.write(f, `---\n{"doi":"10.1000/new"}\n---\n`);
+	await flush();
+	release();
+	await assert.rejects(pending, /changed during lookup/);
+	await flush();
+	assert.equal(f.path, "References/draft.md", "not renamed");
+	assert.deepEqual(fm(app, f), { doi: "10.1000/new" }, "not filled from the old DOI");
 });
 
 // ---------------------------------------------------------------- library base command

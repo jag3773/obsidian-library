@@ -114,6 +114,8 @@ export class BatchActions {
 		if (!this.library.exists(file)) throw new Error("no longer in the vault");
 		const skip = this.skipReason(file, action);
 		if (skip) return false;
+		// The plugin may have been unloaded while the batch ran; stop before writing.
+		this.library.assertActive();
 		this.settle(file.path);
 		try {
 			switch (action.kind) {
@@ -123,6 +125,8 @@ export class BatchActions {
 					let changed = false;
 					const same = this.sameFrom(file);
 					await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
+						// processFrontMatter runs this later; throwing here leaves the note unwritten.
+						this.library.assertActive();
 						changed = applyToFrontmatter(fm, action, this.props(), same);
 					});
 					return changed;
@@ -153,6 +157,9 @@ export class BatchActions {
 		if (!data) throw new Error(net.unreachable ? "couldn't reach the network" : `nothing found for ${id.value}`);
 		await this.library.exclusive(async () => {
 			if (!this.library.exists(file)) throw new Error("no longer in the vault");
+			// The note may have been moved out of the references folder or given another identifier while this looked up.
+			const now = this.library.identifierOf(file);
+			if (!this.library.isReference(file) || now?.kind !== id.kind || now.value !== id.value) throw new Error("changed during lookup");
 			await this.library.complete(file, data, s.defaultStatus);
 		});
 		return true;
