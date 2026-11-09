@@ -83,7 +83,37 @@ function joinContent(fm: Record<string, unknown> | null, body: string): string {
 	return fm && Object.keys(fm).length ? `---\n${JSON.stringify(fm)}\n---\n${body}` : body;
 }
 
+/** Raw file access beneath the vault model, as Obsidian's DataAdapter. */
+export class Adapter {
+	files = new Map<string, string>();
+	writes: string[] = [];
+	/** Test hook: make rename fail (some platforms refuse to replace an existing file). */
+	failRename = false;
+	async exists(p: string) {
+		return this.files.has(normalizePath(p));
+	}
+	async read(p: string) {
+		const v = this.files.get(normalizePath(p));
+		if (v === undefined) throw new Error(`ENOENT ${p}`);
+		return v;
+	}
+	async write(p: string, data: string) {
+		this.writes.push(normalizePath(p));
+		this.files.set(normalizePath(p), data);
+	}
+	async rename(from: string, to: string) {
+		if (this.failRename) throw new Error("Destination file already exists!");
+		const v = await this.read(from);
+		this.files.delete(normalizePath(from));
+		this.files.set(normalizePath(to), v);
+	}
+	async remove(p: string) {
+		this.files.delete(normalizePath(p));
+	}
+}
+
 export class Vault extends Events {
+	adapter = new Adapter();
 	files = new Map<string, TAbstractFile>();
 	contents = new Map<TFile, string | ArrayBuffer>();
 	root: TFolder;

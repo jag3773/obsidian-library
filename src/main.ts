@@ -1,4 +1,6 @@
-import { Notice, Plugin, TAbstractFile, TFile, requestUrl } from "obsidian";
+import { Menu, Notice, Plugin, TAbstractFile, TFile, normalizePath, requestUrl } from "obsidian";
+import { FORMAT_LABELS, render } from "./bibliography";
+import { BibliographyExporter } from "./export";
 import { Identifier, detectIdentifier } from "./identifiers";
 import { Inbox } from "./inbox";
 import { Cancelled, Library } from "./library";
@@ -6,11 +8,13 @@ import { Fetcher } from "./metadata/http";
 import { lookup } from "./metadata/lookup";
 import { LibrarySettingTab, LibrarySettings, withDefaults } from "./settings";
 import { AddReferenceModal } from "./ui/AddReferenceModal";
+import { ReportModal } from "./ui/ReportModal";
 
 const PREFIX = "Library";
 const COMPLETE_DEBOUNCE_MS = 2000;
 const INBOX_SETTLE_MS = 750;
 const BUSY_SETTLE_MS = 1500;
+const EXPORT_DEBOUNCE_MS = 5000;
 
 const sameId = (a: Identifier | null, b: Identifier | null) => !!a && !!b && a.kind === b.kind && a.value === b.value;
 
@@ -18,7 +22,10 @@ export default class LibraryPlugin extends Plugin {
 	settings!: LibrarySettings;
 	library!: Library;
 	inbox!: Inbox;
+	exporter!: BibliographyExporter;
 	private fetcher!: Fetcher;
+	/** The pending automatic bibliography export, if any. */
+	private exportTimer: number | null = null;
 	/** False once unloaded; queued and in-flight work checks it before touching the vault. */
 	private alive = false;
 	/** Paths the plugin is currently writing, so its own edits don't retrigger handlers. */
@@ -37,6 +44,7 @@ export default class LibraryPlugin extends Plugin {
 		};
 		this.library = new Library(this.app, () => this.settings, () => this.alive);
 		this.inbox = new Inbox(this.app, this.library, this.fetcher, () => this.settings);
+		this.exporter = new BibliographyExporter(this.app, this.library, () => this.settings);
 
 		this.addSettingTab(new LibrarySettingTab(this.app, this));
 		this.addRibbonIcon("library", "Add reference", () => this.openAddReference());
@@ -68,18 +76,61 @@ export default class LibraryPlugin extends Plugin {
 			},
 		});
 
+		this.addCommand({ id: "export-bibliography", name: "Export bibliography", callback: () => void this.exportBibliography(true) });
+		this.addCommand({
+			id: "copy-citation",
+			name: "Copy bibliography entry for current reference",
+			checkCallback: (checking) => {
+				const file = this.app.workspace.getActiveFile();
+				if (!file || !this.library.isReference(file)) return false;
+				if (!checking) void this.copyBibliography([file]);
+				return true;
+			},
+		});
+		// Several references selected in the file explorer.
+		this.registerEvent(
+			this.app.workspace.on("files-menu", (menu: Menu, files: TAbstractFile[]) => {
+				const refs = files.filter((f): f is TFile => f instanceof TFile && this.library.isReference(f));
+				if (!refs.length) return;
+				menu.addItem((item) =>
+					item
+						.setTitle(`Copy bibliography (${FORMAT_LABELS[this.settings.exportFormat]})`)
+						.setIcon("library")
+						.onClick(() => void this.copyBibliography(refs))
+				);
+			})
+		);
+
 		// Register after the initial index so existing files don't fire "create".
 		this.app.workspace.onLayoutReady(() => {
 			this.registerEvent(this.app.vault.on("create", (f) => this.onCreate(f)));
-			this.registerEvent(this.app.metadataCache.on("changed", (file) => this.scheduleCompletion(file)));
+			this.registerEvent(
+				this.app.metadataCache.on("changed", (file) => {
+					this.scheduleCompletion(file);
+					if (this.library.isReference(file)) this.scheduleExport();
+				})
+			);
 			// A pending completion belongs to the path it was scheduled for.
-			this.registerEvent(this.app.vault.on("rename", (_f, oldPath) => this.cancelCompletion(oldPath)));
-			this.registerEvent(this.app.vault.on("delete", (f) => this.cancelCompletion(f.path)));
+			this.registerEvent(
+				this.app.vault.on("rename", (f, oldPath) => {
+					this.cancelCompletion(oldPath);
+					// Into, within or out of the references folder.
+					const folder = normalizePath(this.settings.referencesFolder);
+					if (f instanceof TFile && f.extension === "md" && (this.library.isReference(f) || oldPath.startsWith(`${folder}/`))) this.scheduleExport();
+				})
+			);
+			this.registerEvent(
+				this.app.vault.on("delete", (f) => {
+					this.cancelCompletion(f.path);
+					if (f instanceof TFile && f.extension === "md" && this.library.inFolder(f, this.settings.referencesFolder)) this.scheduleExport();
+				})
+			);
 		});
 	}
 
 	onunload(): void {
 		this.alive = false;
+		this.exportTimer = null;
 		for (const t of this.timers) window.clearTimeout(t);
 		this.timers.clear();
 		this.completeTimers.clear();
@@ -267,5 +318,52 @@ export default class LibraryPlugin extends Plugin {
 				new Notice(`${PREFIX}: completed ${moved.basename} (from ${data.source}).`);
 			});
 		});
+	}
+
+	/** Export soon, once edits settle; each change restarts the wait. Only when auto-export is on. */
+	scheduleExport(): void {
+		if (!this.alive || !this.settings.autoExport) return;
+		if (this.exportTimer !== null) this.clearLater(this.exportTimer);
+		this.exportTimer = this.later(() => {
+			this.exportTimer = null;
+			void this.exportBibliography(false);
+		}, EXPORT_DEBOUNCE_MS);
+	}
+
+	/**
+	 * Write the bibliography. `explicit` (the command or button) reports the result; automatic
+	 * exports stay quiet unless they fail.
+	 */
+	async exportBibliography(explicit: boolean): Promise<void> {
+		try {
+			const r = await this.exporter.export();
+			if (!explicit) {
+				if (r.problems.length) console.info(`[${PREFIX}] bibliography: ${r.problems.length} problems`, r.problems);
+				return;
+			}
+			const summary = [
+				`${r.items.length} references ${r.written ? "written to" : "already up to date in"} ${r.path} (${FORMAT_LABELS[r.format]}).`,
+				...(r.filtered ? [`${r.filtered} notes left out by the filter "${this.settings.exportFilter}".`] : []),
+			];
+			if (!r.problems.length) {
+				new Notice(`${PREFIX}: ${summary.join(" ")}`);
+				return;
+			}
+			const lines = r.problems.map((p) => `${p.citekey ?? p.path}: ${p.problem}`);
+			new ReportModal(this.app, "Bibliography exported", summary, [{ heading: "To check", lines }]).open();
+		} catch (e) {
+			this.report(e);
+		}
+	}
+
+	/** Copy the given references' entries to the clipboard in the configured format. */
+	async copyBibliography(files: TFile[]): Promise<void> {
+		const bib = this.exporter.build(files, "");
+		if (!bib.items.length) {
+			new Notice(`${PREFIX}: nothing to copy. ${bib.problems.map((p) => p.problem).join("; ")}`);
+			return;
+		}
+		await navigator.clipboard.writeText(render(bib.items, this.settings.exportFormat));
+		new Notice(`${PREFIX}: copied ${bib.items.length} ${bib.items.length === 1 ? "entry" : "entries"} (${FORMAT_LABELS[this.settings.exportFormat]}).`);
 	}
 }

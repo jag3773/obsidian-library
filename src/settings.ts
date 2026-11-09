@@ -1,5 +1,6 @@
 import { App, PluginSettingTab, Setting, TFile, normalizePath, parseYaml, stringifyYaml } from "obsidian";
 import { BaseConfig, baseDisplayNames, baseFolder, basePropertyNames, matchProperties, starterBase, validateBase } from "./bases";
+import { BibFormat, FORMAT_EXTENSIONS, FORMAT_LABELS, parseFilter } from "./bibliography";
 import { parsePattern } from "./citekey";
 import type LibraryPlugin from "./main";
 import { PathSuggest, filePaths, folderPaths } from "./ui/PathSuggest";
@@ -28,6 +29,13 @@ export interface LibrarySettings {
 	urlProperties: string[];
 	crossrefMailto: string;
 	propertyNames: Record<PropertyKey, string>;
+	/** Bibliography file, relative to the vault root. */
+	exportPath: string;
+	exportFormat: BibFormat;
+	/** "property: value, value" limits the bibliography to matching notes; empty exports all. */
+	exportFilter: string;
+	/** Rewrite the bibliography a few seconds after reference notes change. */
+	autoExport: boolean;
 }
 
 export const DEFAULT_SETTINGS: LibrarySettings = {
@@ -48,7 +56,10 @@ export const DEFAULT_SETTINGS: LibrarySettings = {
 	urlProperties: ["url", "source"],
 	crossrefMailto: "",
 	propertyNames: { ...DEFAULT_PROPERTY_NAMES },
-
+	exportPath: "library.json",
+	exportFormat: "csl-json",
+	exportFilter: "",
+	autoExport: false,
 };
 
 /** Merge saved data over defaults, including the nested property map. */
@@ -58,6 +69,7 @@ export function withDefaults(saved: Partial<LibrarySettings> | null | undefined)
 	// Guard against hand-edited or corrupted data.json.
 	if (!Array.isArray(s.statuses)) s.statuses = [...DEFAULT_SETTINGS.statuses];
 	if (!Array.isArray(s.urlProperties)) s.urlProperties = [...DEFAULT_SETTINGS.urlProperties];
+	if (!(s.exportFormat in FORMAT_LABELS)) s.exportFormat = DEFAULT_SETTINGS.exportFormat;
 	if (typeof s.libraryBase !== "string") s.libraryBase = "";
 	// An empty references folder would make every note in the vault a "reference" that
 	// automatic completion could rename and move.
@@ -254,6 +266,44 @@ export class LibrarySettingTab extends PluginSettingTab {
 			() => s.crossrefMailto,
 			(v) => (s.crossrefMailto = v)
 		);
+
+		new Setting(containerEl).setName("Bibliography").setHeading();
+		new Setting(containerEl)
+			.setName("Format")
+			.setDesc("CSL-JSON works with Pandoc, Quarto and the Pandoc Reference List plugin. See docs/citation-fields.md for what each format keeps.")
+			.addDropdown((d) => {
+				for (const [k, label] of Object.entries(FORMAT_LABELS)) d.addOption(k, label);
+				d.setValue(s.exportFormat).onChange(async (v) => {
+					const old = FORMAT_EXTENSIONS[s.exportFormat];
+					s.exportFormat = v as BibFormat;
+					// Follow the format with the file's extension, if it still has the old one.
+					if (s.exportPath.endsWith(`.${old}`)) s.exportPath = s.exportPath.slice(0, -old.length) + FORMAT_EXTENSIONS[s.exportFormat];
+					await save();
+					this.display();
+				});
+			});
+		path("Bibliography file", "Relative to the vault root. Written with entries sorted by citekey, so git diffs stay small.", () => filePaths(this.app, ["json", "bib"]), () => s.exportPath, (v) => (s.exportPath = v), "library.json");
+		new Setting(containerEl)
+			.setName("Only references where")
+			.setDesc('Optional. "property: value, value", for a project bibliography. For example: collections: Climate, or status: processed, reviewing.')
+			.addText((t) =>
+				t
+					.setPlaceholder("collections: Climate")
+					.setValue(s.exportFilter)
+					.onChange(async (v) => {
+						const ok = !v.trim() || !!parseFilter(v);
+						t.inputEl.toggleClass("library-invalid", !ok);
+						if (ok) {
+							s.exportFilter = v.trim();
+							await save();
+						}
+					})
+			);
+		toggle("Export automatically", "Rewrite the bibliography a few seconds after a reference note changes. Unchanged output isn't rewritten.", () => s.autoExport, (v) => {
+			s.autoExport = v;
+			if (v) this.plugin.scheduleExport();
+		});
+		new Setting(containerEl).addButton((b) => b.setButtonText("Export now").onClick(() => void this.plugin.exportBibliography(true)));
 
 		this.displayBase(containerEl);
 	}
