@@ -157,6 +157,7 @@ export function parseWebpage(html: string, url: string): ReferenceData {
 		editors: found.editors,
 		translators: found.translators,
 		contributors: found.contributors,
+		names: found.names,
 		date: found.date,
 		year: yearOf(found.date),
 		journal: found.type === "book" ? undefined : found.journal,

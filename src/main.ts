@@ -52,7 +52,10 @@ export default class LibraryPlugin extends Plugin {
 		this.inbox = new Inbox(this.app, this.library, this.fetcher, () => this.settings);
 		this.exporter = new BibliographyExporter(this.app, this.library, () => this.settings);
 		const pluginDir = this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`;
-		this.importer = new ZoteroImporter(this.app, this.library, () => this.settings, `${pluginDir}/backups`);
+		this.importer = new ZoteroImporter(this.app, this.library, () => this.settings, `${pluginDir}/backups`, async (path) => {
+			this.settings.lastImportBackup = path;
+			await this.saveSettings();
+		});
 
 		this.addSettingTab(new LibrarySettingTab(this.app, this));
 		this.addRibbonIcon("library", "Add reference", () => this.openAddReference());
@@ -360,8 +363,15 @@ export default class LibraryPlugin extends Plugin {
 		if (this.exportTimer !== null) this.clearLater(this.exportTimer);
 		this.exportTimer = this.later(() => {
 			this.exportTimer = null;
-			void this.exportBibliography(false);
+			// The setting may have been turned off while this waited.
+			if (this.settings.autoExport) void this.exportBibliography(false);
 		}, EXPORT_DEBOUNCE_MS);
+	}
+
+	/** Drop a pending automatic export (auto-export turned off). */
+	cancelExport(): void {
+		if (this.exportTimer !== null) this.clearLater(this.exportTimer);
+		this.exportTimer = null;
 	}
 
 	/**
@@ -473,9 +483,7 @@ export default class LibraryPlugin extends Plugin {
 			this.settings.zoteroImport,
 			this.settings.statuses,
 			() => this.saveSettings(),
-			(reportPath, backupPath) => {
-				this.settings.lastImportBackup = backupPath;
-				void this.saveSettings();
+			(reportPath) => {
 				const report = this.app.vault.getAbstractFileByPath(reportPath);
 				if (report instanceof TFile) void this.app.workspace.getLeaf(false).openFile(report);
 				new Notice(`${PREFIX}: import done. The report is ${reportPath}.`);

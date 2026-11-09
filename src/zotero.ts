@@ -384,7 +384,18 @@ export function planImport(exp: BbtExport, notes: VaultNote[], o: ImportOptions)
 			readable.set(n, fixed);
 		} else readable.set(n, {});
 	}
-	const sortedNotes = [...readable.keys()];
+	// Group-library notes aren't in a personal export: set them aside before matching, so no
+	// personal item can claim one by filename, citekey or title.
+	const isGroupNote = (n: VaultNote) => {
+		const text = `${str(readable.get(n)![p("zotero")]) ?? ""}\n${n.body}`;
+		const links = [...text.matchAll(new RegExp(ZOTERO_LINK.source, "g"))];
+		return links.length > 0 && links.every((l) => l[1] !== "library");
+	};
+	const sortedNotes = [...readable.keys()].filter((n) => {
+		if (!isGroupNote(n)) return true;
+		report.groupNotes.push(n.path);
+		return false;
+	});
 	const byBasename = new Map<string, VaultNote>();
 	const byCitekeyProp = new Map<string, VaultNote>();
 	const byZoteroKey = new Map<string, VaultNote[]>();
@@ -394,8 +405,8 @@ export function planImport(exp: BbtExport, notes: VaultNote[], o: ImportOptions)
 		byBasename.set(lower(n.basename), n);
 		const ck = str(fm[p("citekey")]);
 		if (ck && !byCitekeyProp.has(lower(ck))) byCitekeyProp.set(lower(ck), n);
-		const link = ZOTERO_LINK.exec(`${str(fm[p("zotero")]) ?? ""}\n${n.body}`);
-		if (link && link[1] === "library") byZoteroKey.set(link[2], [...(byZoteroKey.get(link[2]) ?? []), n]);
+		const link = [...`${str(fm[p("zotero")]) ?? ""}\n${n.body}`.matchAll(new RegExp(ZOTERO_LINK.source, "g"))].find((l) => l[1] === "library");
+		if (link) byZoteroKey.set(link[2], [...(byZoteroKey.get(link[2]) ?? []), n]);
 		const title = str(fm[p("title")]) ?? n.body.match(H1)?.[1];
 		if (title) byTitle.set(titleKey(title), [...(byTitle.get(titleKey(title)) ?? []), n]);
 	}
@@ -430,12 +441,8 @@ export function planImport(exp: BbtExport, notes: VaultNote[], o: ImportOptions)
 		if (taken.has(n)) continue;
 		const fm = readable.get(n)!;
 		const text = `${str(fm[p("zotero")]) ?? ""}\n${n.body}`;
-		const link = ZOTERO_LINK.exec(text);
+		const link = [...text.matchAll(new RegExp(ZOTERO_LINK.source, "g"))].find((l) => l[1] === "library");
 		if (!link) continue;
-		if (link[1] !== "library") {
-			report.groupNotes.push(n.path);
-			continue;
-		}
 		const item = byKey.get(link[2]);
 		const kept = item && noteFor.get(item);
 		if (kept) report.duplicateNotes.push({ note: n.path, keptNote: kept.note.path, citekey: item!.citationKey ?? item!.key });
@@ -515,7 +522,8 @@ export function planImport(exp: BbtExport, notes: VaultNote[], o: ImportOptions)
 
 	const plan: ImportPlan = { updates: [], creates: [], report };
 	const folder = o.referencesFolder.replace(/\/+$/, "");
-	const existingNames = new Set(sortedNotes.map((n) => lower(n.basename)));
+	// Every note, group ones included: a rename or a new note must not take any of their names.
+	const existingNames = new Set([...readable.keys()].map((n) => lower(n.basename)));
 	for (const item of items) {
 		report.itemTypes[item.itemType] = ZOTERO_TYPES[item.itemType] ?? "document";
 		for (const f of unmappedFields(item)) report.unmappedFields[f] = (report.unmappedFields[f] ?? 0) + 1;

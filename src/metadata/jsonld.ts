@@ -1,6 +1,7 @@
 import { canonicalIsbn } from "../identifiers";
 import { parseDate } from "./dates";
-import { Found } from "./found";
+import { Found, isPeople } from "./found";
+import { PersonName, displayName, parseName } from "../names";
 import { htmlToText, tidy } from "./html";
 
 /** schema.org data in <script type="application/ld+json">, the richest source on most sites. */
@@ -97,10 +98,29 @@ function resolve(item: Obj, objs: Obj[]): Obj {
 	return out;
 }
 
-function people(v: unknown): string[] {
-	return list(v)
-		.map((p) => (typeof p === "string" ? p.trim() : isObj(p) ? str(p.name) ?? [str(p.givenName), str(p.familyName)].filter(Boolean).join(" ") : ""))
-		.filter((n): n is string => !!n && !/^https?:\/\//.test(n));
+const ORGANIZATION = /Organization$|^(Corporation|NGO|Consortium|Project)$/;
+
+/**
+ * People as names, keeping what the page says: given and family names stay split
+ * ("García Márquez" stays one family name), and an Organization stays whole.
+ */
+function people(v: unknown): PersonName[] {
+	const out: PersonName[] = [];
+	for (const p of list(v)) {
+		let n: PersonName | undefined;
+		if (typeof p === "string") n = parseName(clean(p) ?? p);
+		else if (isObj(p)) {
+			const name = clean(str(p.name));
+			const given = clean(str(p.givenName));
+			const family = clean(str(p.familyName));
+			if (types(p).some((t) => ORGANIZATION.test(t)) && name) n = { literal: name };
+			else if (family) n = { given, family };
+			else if (name) n = parseName(name);
+		}
+		const display = n ? displayName(n) : "";
+		if (n && display && !/^https?:\/\//.test(display)) out.push(n);
+	}
+	return out;
 }
 
 /** schema.org values are often HTML-escaped or contain markup. */
@@ -126,14 +146,17 @@ function doiOf(o: Obj): string | undefined {
 }
 
 function fromItem(o: Obj): Found {
-	const persons = (v: unknown) => people(v).map((a) => clean(a) ?? a);
+	const authors = people(o.author ?? o.creator);
+	const editors = people(o.editor);
+	const translators = people(o.translator);
 	const first = str(o.pageStart);
 	const last = str(o.pageEnd);
 	return {
 		title: clean(str(o.name) ?? str(o.headline)),
-		authors: persons(o.author ?? o.creator),
-		editors: persons(o.editor),
-		translators: persons(o.translator),
+		authors: authors.map(displayName),
+		editors: editors.map(displayName),
+		translators: translators.map(displayName),
+		names: { authors, editors, translators },
 		language: str(o.inLanguage),
 		edition: str(o.bookEdition),
 		volume: str(o.volumeNumber),
@@ -168,8 +191,13 @@ export function readJsonLd(doc: Document): Found & { type?: string } {
 	for (const extra of extras) {
 		const more = fromItem(extra);
 		for (const k of Object.keys(more) as (keyof Found)[]) {
+			if (k === "names") continue;
 			const have = found[k];
-			if (have === undefined || (Array.isArray(have) && !have.length)) (found as Record<string, unknown>)[k] = more[k];
+			if (have === undefined || (Array.isArray(have) && !have.length)) {
+				(found as Record<string, unknown>)[k] = more[k];
+				// A list of people travels with its name parts.
+				if (isPeople(k)) found.names = { ...found.names, [k]: more.names?.[k] };
+			}
 		}
 	}
 	if (main.type === "webpage" && found.isbn) found.type = "book";

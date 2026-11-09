@@ -223,3 +223,32 @@ test("records missing what their type needs are reported", () => {
 	assert.deepEqual(missingFields(noteToCsl({ citekey: "k", type: "webpage" }, p)!), ["title", "URL"]);
 	assert.equal(noteToCsl({ citekey: "k", type: "article", journal: "[[Nature|the journal]]", year: 2001 }, p)?.["container-title"], "Nature");
 });
+
+// PR #38 review ------------------------------------------------------------------------------
+
+test("standard CSL-JSON (doi.org) identifiers are strings, not lists", () => {
+	const r = parseCsl({ type: "book", title: ["T"], ISSN: "1234-5678", ISBN: "978-0-14-312837-3 014312837X" } as any, "10.1/x", "doi.org")!;
+	assert.equal(r.issn, "1234-5678");
+	assert.equal(r.isbn, "9780143128373");
+	const crossref = parseCsl({ type: "journal-article", title: ["T"], ISSN: ["0017-8012", "1234-5678"], ISBN: ["9780143128373"] }, "10.1/y", "Crossref")!;
+	assert.equal(crossref.issn, "0017-8012");
+	assert.equal(crossref.isbn, "9780143128373");
+});
+
+test("JSON-LD name parts and organizations survive lookup, note and export", async () => {
+	const page = parseWebpage(
+		`<script type="application/ld+json">{"@type":"Book","name":"Cien años","isbn":"9780060883287","datePublished":"1967","publisher":"P",
+			"author":{"@type":"Person","givenName":"Gabriel","familyName":"García Márquez"},
+			"editor":{"@type":"Person","givenName":"Ana","familyName":"de la Cruz Pérez"},
+			"translator":{"@type":"Organization","name":"National Geographic"}}</script>`,
+		"https://books.example/cien"
+	);
+	assert.deepEqual(page.authors, ["Gabriel García Márquez"]);
+	const { item, fm } = await roundTrip(page);
+	assert.deepEqual(fm.authors, ["[[Gabriel García Márquez|García Márquez, Gabriel]]"]);
+	assert.deepEqual(fm.translators, ["[[National Geographic|{National Geographic}]]"]);
+	assert.deepEqual(item.author, [{ family: "García Márquez", given: "Gabriel" }]);
+	// The particle is split out, which CSL renders the same: "Ana de la Cruz Pérez".
+	assert.deepEqual(item.editor, [{ family: "Cruz Pérez", given: "Ana", "non-dropping-particle": "de la" }]);
+	assert.deepEqual(item.translator, [{ literal: "National Geographic" }]);
+});

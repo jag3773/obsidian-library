@@ -274,3 +274,30 @@ test("auto-export runs only for changes to reference notes", async (t) => {
 	assert.equal(runs, 1);
 	plugin.unload();
 });
+
+test("turning auto-export off drops a pending export", async (t) => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const app = new App();
+	const plugin = new LibraryPlugin(app as any, { id: "stacks" } as any);
+	(plugin as any).data = { autoExport: true };
+	await plugin.onload();
+	let runs = 0;
+	const real = plugin.exporter.export.bind(plugin.exporter);
+	plugin.exporter.export = async (...a: Parameters<typeof real>) => {
+		runs++;
+		return real(...a);
+	};
+	const ref = app.vault.addFile("References/r.md", `---\n{"citekey":"r"}\n---\n`);
+	app.metadataCache.trigger("changed", ref);
+	plugin.settings.autoExport = false;
+	t.mock.timers.tick(6000);
+	await flush();
+	assert.equal(runs, 0, "rechecked when the timer fires");
+	plugin.settings.autoExport = true;
+	app.metadataCache.trigger("changed", ref);
+	plugin.cancelExport();
+	t.mock.timers.tick(6000);
+	await flush();
+	assert.equal(runs, 0, "cancelled by the setting");
+	plugin.unload();
+});

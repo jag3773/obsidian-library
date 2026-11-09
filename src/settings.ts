@@ -311,6 +311,7 @@ export class LibrarySettingTab extends PluginSettingTab {
 		toggle("Export automatically", "Rewrite the bibliography a few seconds after a reference note changes. Unchanged output isn't rewritten.", () => s.autoExport, (v) => {
 			s.autoExport = v;
 			if (v) this.plugin.scheduleExport();
+			else this.plugin.cancelExport();
 		});
 		new Setting(containerEl).addButton((b) => b.setButtonText("Export now").onClick(() => void this.plugin.exportBibliography(true)));
 

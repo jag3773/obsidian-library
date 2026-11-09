@@ -21,7 +21,7 @@ export class ImportModal extends Modal {
 		private choices: ImportChoices,
 		private statuses: string[],
 		private save: () => Promise<void>,
-		private onImported: (reportPath: string, backupPath: string) => void
+		private onImported: (reportPath: string) => void
 	) {
 		super(app);
 	}
@@ -186,7 +186,7 @@ export class ImportModal extends Modal {
 			const backup = await this.importer.apply(plan, this.choices, (done, total) => {
 				if (done % 50 === 0 || done === total) progress.setMessage(`Stacks: importing… ${done} of ${total}`);
 			});
-			this.onImported(backup.reportPath, this.importer.lastBackup);
+			this.onImported(backup.reportPath);
 		} catch (e) {
 			new Notice(`Stacks: import stopped. ${e instanceof Error ? e.message : String(e)} Run Undo last Zotero import to reverse what was written.`);
 		} finally {

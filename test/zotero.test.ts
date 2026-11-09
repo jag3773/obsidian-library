@@ -429,3 +429,72 @@ test("two renames never target the same name", () => {
 	assert.deepEqual(plan.updates.map((u) => u.renameTo), ["R/same.md", undefined]);
 	assert.equal(plan.report.keyChanges[1].reason, "a note with that name exists");
 });
+
+// PR #38 review ------------------------------------------------------------------------------
+
+test("undo never overwrites a note that took a renamed note's old path", async () => {
+	const { app, importer, choices } = vault();
+	await importer.apply((await importer.plan(choices)).plan, choices);
+	await flush();
+	// smithOldKey2020 was renamed to smithNewKey2020; a new note now sits at the old path.
+	const mine = "My own writing, made after the import.\n";
+	app.vault.addFile("References/smithOldKey2020.md", mine);
+	const r = await importer.undo(importer.lastBackup);
+	await flush();
+	assert.deepEqual(r.skipped, ["References/smithNewKey2020.md"]);
+	assert.equal(await app.vault.read(app.vault.getAbstractFileByPath("References/smithOldKey2020.md") as TFile), mine, "the new note is untouched");
+	assert.ok(app.vault.getAbstractFileByPath("References/smithNewKey2020.md"), "the imported note stays where it is");
+});
+
+test("group-library notes are never claimed by a personal item, by title or citekey", () => {
+	const notes = [
+		{ path: "R/Shared Book.md", basename: "Shared Book", frontmatter: { title: "Shared Book" }, body: "[x](zotero://select/groups/123/items/GGGGGGG1)" },
+		{ path: "R/sharedKey.md", basename: "sharedKey", frontmatter: {}, body: "[x](zotero://select/groups/123/items/GGGGGGG2)" },
+	];
+	const exp: BbtExport = {
+		items: [
+			{ key: "PPPPPPP1", itemType: "book", citationKey: "personal2020", title: "Shared Book" },
+			{ key: "PPPPPPP2", itemType: "book", citationKey: "sharedKey", title: "Other" },
+		],
+	};
+	const plan = planImport(exp, notes, opts({ createMissing: true }));
+	assert.equal(plan.updates.length, 0);
+	assert.deepEqual(plan.report.groupNotes, ["R/Shared Book.md", "R/sharedKey.md"]);
+	assert.deepEqual(plan.creates.map((c) => c.path), ["R/personal2020.md"], "a different item with the same title gets its own note");
+	assert.deepEqual(plan.report.notCreated, ["sharedKey"], "and never takes a group note's filename");
+});
+
+test("if the report can't be written, the backup still records what to undo", async () => {
+	const { app, importer, choices } = vault();
+	const create = app.vault.create.bind(app.vault);
+	(app.vault as any).create = async (path: string, data: string) => {
+		if (path.includes("Zotero import")) throw new Error("disk full");
+		return create(path, data);
+	};
+	await assert.rejects(importer.apply((await importer.plan(choices)).plan, choices), /disk full/);
+	(app.vault as any).create = create;
+	const r = await importer.undo(importer.lastBackup);
+	await flush();
+	assert.equal(r.trashed, 1, "the created note is found and removed");
+	assert.equal(app.vault.getAbstractFileByPath("References/newItemNoNote2024.md"), null);
+	assert.ok(app.vault.getAbstractFileByPath("References/smithOldKey2020.md"), "the rename is reversed");
+});
+
+test("an import that fails partway is still the one Undo targets", async () => {
+	const { app, library, settings, choices } = vault();
+	const targets: string[] = [];
+	const importer = new ZoteroImporter(app as any, library, () => settings, "backups", (p) => void targets.push(p));
+	const two = { ...choices, renameToCurrentKeys: false };
+	const { plan } = await importer.plan(two);
+	plan.creates.push({ ...plan.creates[0], path: "References/second.md", extras: { ...plan.creates[0].extras, citekey: "second" } });
+	const create = app.vault.create.bind(app.vault);
+	(app.vault as any).create = async (path: string, data: string) => {
+		if (path === "References/second.md") throw new Error("write failed");
+		return create(path, data);
+	};
+	await assert.rejects(importer.apply(plan, two), /write failed/);
+	(app.vault as any).create = create;
+	assert.equal(targets.length, 1, "announced before anything was written");
+	const r = await importer.undo(targets[0]);
+	assert.equal(r.trashed, 1);
+});

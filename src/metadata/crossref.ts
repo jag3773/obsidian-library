@@ -50,7 +50,8 @@ interface CslWork {
 	edition?: string | number;
 	"publisher-place"?: string;
 	language?: string;
-	ISSN?: string[];
+	/** A list from Crossref; a string in standard CSL-JSON (doi.org). */
+	ISSN?: string | string[];
 	"collection-title"?: string | string[];
 	issued?: { "date-parts"?: number[][] };
 	published?: { "date-parts"?: number[][] };
@@ -58,11 +59,18 @@ interface CslWork {
 	publisher?: string;
 	abstract?: string;
 	URL?: string;
-	ISBN?: string[];
+	ISBN?: string | string[];
 	DOI?: string;
 }
 
 const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+
+/** The first identifier from a list or a single string, either of which CSL-JSON may hold. */
+function identifier(v: string | string[] | undefined): string | undefined {
+	const s = first(v)?.trim();
+	// A string may itself hold several ("0-14-312837-X 978-0-14-312837-3").
+	return s ? s.split(/[\s,;]+/)[0] : undefined;
+}
 
 /** A CSL name, keeping its parts; organizations and single-field names stay whole. */
 function personName(p: CslPerson): PersonName {
@@ -110,10 +118,10 @@ export function parseCsl(work: CslWork | null, doi: string, source: string): Ref
 		place: text(work["publisher-place"]),
 		series: text(first(work["collection-title"])),
 		language: text(work.language),
-		issn: work.ISSN?.[0],
+		issn: identifier(work.ISSN),
 		publisher: work.publisher,
 		abstract: stripTags(work.abstract),
-		isbn: work.ISBN?.[0]?.replace(/-/g, ""),
+		isbn: identifier(work.ISBN)?.replace(/-/g, ""),
 		doi: work.DOI ?? doi,
 		url: work.URL && /^https?:\/\//i.test(work.URL) ? work.URL : undefined,
 		source,

@@ -28,7 +28,9 @@ export class ZoteroImporter {
 		private library: Library,
 		private settings: () => LibrarySettings,
 		/** Folder for import backups, inside the plugin's own folder. */
-		private backupDir: string
+		private backupDir: string,
+		/** Called with a new backup's path before the import writes anything, so Undo can find it even if the import fails. */
+		private onBackup: (path: string) => void | Promise<void> = () => undefined
 	) {}
 
 	async readExport(path: string): Promise<BbtExport> {
@@ -133,6 +135,8 @@ export class ZoteroImporter {
 			if (file instanceof TFile) backup.modified.push({ path: file.path, text: await this.app.vault.read(file) });
 		}
 		const backupPath = await this.saveBackup(backup, stamp);
+		// From here on the vault may change, so this run is what Undo should target.
+		await this.onBackup(backupPath);
 		try {
 			for (const u of plan.updates) {
 				const file = this.app.vault.getAbstractFileByPath(u.note.path);
@@ -180,9 +184,12 @@ export class ZoteroImporter {
 				onProgress(++done, total);
 			}
 		} finally {
-			backup.reportPath = await this.writeReport(plan.report, plan, choices, stamp, backup);
+			// The ledger of created and renamed files comes first: it is what Undo needs,
+			// whatever happens to the report.
 			await this.saveBackup(backup, stamp, backupPath);
 		}
+		backup.reportPath = await this.writeReport(plan.report, plan, choices, stamp, backup);
+		await this.saveBackup(backup, stamp, backupPath);
 		return backup;
 	}
 
@@ -207,13 +214,20 @@ export class ZoteroImporter {
 	async undo(backupPath: string): Promise<{ restored: number; trashed: number; skipped: string[] }> {
 		const backup = JSON.parse(await this.app.vault.adapter.read(backupPath)) as ImportBackup;
 		const skipped: string[] = [];
+		// Original paths whose note couldn't be moved back: whatever is there now is another
+		// note, which must not be overwritten with the backup.
+		const blocked = new Set<string>();
 		for (const r of [...backup.renamed].reverse()) {
 			const f = this.app.vault.getAbstractFileByPath(r.to);
 			if (f instanceof TFile && !this.app.vault.getAbstractFileByPath(r.from)) await this.app.fileManager.renameFile(f, r.from);
-			else skipped.push(r.to);
+			else {
+				skipped.push(r.to);
+				blocked.add(r.from);
+			}
 		}
 		let restored = 0;
 		for (const m of backup.modified) {
+			if (blocked.has(m.path)) continue;
 			const f = this.app.vault.getAbstractFileByPath(m.path);
 			if (f instanceof TFile) {
 				await this.app.vault.modify(f, m.text);
