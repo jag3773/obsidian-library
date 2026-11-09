@@ -3,8 +3,10 @@
   min-width: 18em;
 }
 
-.stacks-invalid {
-  border-color: var(--text-error) !important;
+/* Specific enough to beat the app's own input and focus borders without !important. */
+.setting-item-control input.stacks-invalid,
+.setting-item-control input.stacks-invalid:focus {
+  border-color: var(--text-error);
 }
 
 .stacks-error {

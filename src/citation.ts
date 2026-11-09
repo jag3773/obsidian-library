@@ -6,6 +6,7 @@
 import { parseDate } from "./metadata/dates";
 import { PersonName, namesFromProperty } from "./names";
 import { PropertyKey } from "./properties";
+import { asText } from "./text";
 
 export interface CslName {
 	family?: string;
@@ -86,7 +87,7 @@ const text = (v: unknown): string | undefined => {
 	if (Array.isArray(v)) return text(v[0]);
 	if (v instanceof Date) return isNaN(v.getTime()) ? undefined : v.toISOString().slice(0, 10);
 	// A link loses its brackets and alias: "[[Nature|the journal]]" is "Nature".
-	const s = String(v).replace(/^\[\[([^\]|]*)(?:\|[^\]]*)?\]\]$/, "$1").trim();
+	const s = asText(v).replace(/^\[\[([^\]|]*)(?:\|[^\]]*)?\]\]$/, "$1").trim();
 	return s || undefined;
 };
 

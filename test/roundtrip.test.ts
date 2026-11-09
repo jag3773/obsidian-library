@@ -16,6 +16,7 @@ import { Cancelled, Library } from "../src/library";
 import LibraryPlugin from "../src/main";
 import { ConflictChoice, ConflictInfo, Host, RoundTrip, classifyReturn, toArrayBuffer } from "../src/roundtrip";
 import { LibrarySettings, withDefaults } from "../src/settings";
+import { localDate } from "../src/text";
 import { buildPdf, lineQuad } from "./pdf-fixture";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -119,7 +120,7 @@ test("extraction writes the block under the heading, sets the count and date, an
 	assert.match(text, /> \[!tip\] Follow up · \[\[smith2020\.pdf#page=1\|p\. 1\]\]\n> Another one for later\./);
 	assert.ok(text.indexOf(END_MARKER) < text.indexOf("Written under the heading by me."));
 	assert.equal(fm(app, note).highlights, 2);
-	assert.equal(fm(app, note).last_highlighted, "2026-11-08");
+	assert.equal(fm(app, note).last_highlighted, localDate());
 
 	// Again with nothing new: nothing is written.
 	const before = content(app, note);

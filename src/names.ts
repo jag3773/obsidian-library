@@ -1,3 +1,4 @@
+
 /**
  * Pure module: personal and organization names as citation records need them.
  *
@@ -11,6 +12,8 @@
  *
  * The same conventions as BibTeX's, so names survive export unchanged.
  */
+
+import { asText } from "./text";
 
 export interface PersonName {
 	given?: string;
@@ -115,7 +118,7 @@ export function nameValue(n: PersonName, asLink: boolean): string {
 
 /** A name from a property value: "[[Target|Sort, Form]]", "[[Target]]", "Doe, Jane" or "{Org}". */
 export function nameFromValue(v: unknown): PersonName {
-	const s = String(v ?? "").trim();
+	const s = asText(v).trim();
 	const link = s.match(/^\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|([^\]]*))?\]\]$/);
 	if (link) {
 		const alias = link[2]?.trim();

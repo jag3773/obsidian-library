@@ -18,6 +18,7 @@ import { ImportModal } from "./ui/ImportModal";
 import { ReportModal } from "./ui/ReportModal";
 import { ZoteroImporter } from "./zoteroImport";
 import { ConflictModal } from "./ui/ConflictModal";
+import { asText } from "./text";
 
 const PREFIX = "Stacks";
 const COMPLETE_DEBOUNCE_MS = 2000;
@@ -264,7 +265,7 @@ export default class LibraryPlugin extends Plugin {
 	}
 
 	async loadSettings(): Promise<void> {
-		this.settings = withDefaults(await this.loadData());
+		this.settings = withDefaults((await this.loadData()) as Partial<LibrarySettings> | null);
 	}
 
 	async saveSettings(): Promise<void> {
@@ -475,7 +476,7 @@ export default class LibraryPlugin extends Plugin {
 		try {
 			const r = await this.exporter.export();
 			if (!explicit) {
-				if (r.problems.length) console.info(`[${PREFIX}] bibliography: ${r.problems.length} problems`, r.problems);
+				if (r.problems.length) console.debug(`[${PREFIX}] bibliography: ${r.problems.length} problems`, r.problems);
 				return;
 			}
 			const summary = [
@@ -529,7 +530,7 @@ export default class LibraryPlugin extends Plugin {
 			new Notice(`${PREFIX}: move the note into ${this.settings.referencesFolder} first, or add an ISBN, DOI or URL.`);
 			return;
 		}
-		const title = String(this.library.frontmatter(file)[this.library.prop("title")] ?? "").trim();
+		const title = asText(this.library.frontmatter(file)[this.library.prop("title")]).trim();
 		if (!title) {
 			new Notice(`${PREFIX}: add a title (and ideally authors and a year) first.`);
 			return;
@@ -609,7 +610,7 @@ export default class LibraryPlugin extends Plugin {
 	}
 
 	private statusOf(file: TFile): string {
-		return String(this.library.frontmatter(file)[this.library.prop("status")] ?? "").trim();
+		return asText(this.library.frontmatter(file)[this.library.prop("status")]).trim();
 	}
 
 	/** Send the PDF when a note's status changes to the send status. */

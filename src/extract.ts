@@ -1,8 +1,9 @@
-import { App, TFile, moment } from "obsidian";
+import { App, TFile } from "obsidian";
 import { applyAnnotationBlock, currentAnnotationBlock, headingLevel, parseColorMap, renderAnnotations } from "./annotations";
 import { Cancelled, Library, unlink } from "./library";
 import { readAnnotations } from "./pdf";
 import { LibrarySettings } from "./settings";
+import { asText, localDate } from "./text";
 
 export interface ExtractSummary {
 	note: TFile;
@@ -97,7 +98,7 @@ export class Extractor {
 		this.assertActive();
 		await this.app.fileManager.processFrontMatter(note, (f: Record<string, unknown>) => {
 			f[countKey] = summary.count;
-			if (!sameBlock) f[this.library.prop("lastHighlighted")] = moment().format("YYYY-MM-DD");
+			if (!sameBlock) f[this.library.prop("lastHighlighted")] = localDate();
 			if (status) f[this.library.prop("status")] = status;
 		});
 		return summary;
@@ -108,7 +109,7 @@ export class Extractor {
 		const s = this.settings();
 		const target = s.statusAfterExtraction.trim();
 		if (!target) return null;
-		const current = String(fm[this.library.prop("status")] ?? "").trim();
+		const current = asText(fm[this.library.prop("status")]).trim();
 		if (current === target) return null;
 		const ti = s.statuses.indexOf(target);
 		const ci = s.statuses.indexOf(current);

@@ -87,7 +87,7 @@ const goodreads: Site = (doc) => {
 		.map(([, v]) => obj(v)!)[0];
 	if (!book) return found;
 	const details = obj(book.details)!;
-	const nameOf = (edge: unknown) => s(obj(state![String(obj(obj(edge)?.node)?.__ref)])?.name);
+	const nameOf = (edge: unknown) => s(obj(state[String(obj(obj(edge)?.node)?.__ref)])?.name);
 	const secondary = Array.isArray(book.secondaryContributorEdges) ? book.secondaryContributorEdges : [];
 	const authors = [nameOf(book.primaryContributorEdge), ...secondary.filter((e) => /author/i.test(String(obj(e)?.role))).map(nameOf)].filter(
 		(n): n is string => !!n

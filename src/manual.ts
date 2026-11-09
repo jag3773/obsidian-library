@@ -6,6 +6,7 @@ import { detectIdentifier } from "./identifiers";
 import { parseDate, yearOf } from "./metadata/dates";
 import { ReferenceData, citekeyFamilies } from "./metadata/types";
 import { displayName, familyOf, parseName } from "./names";
+import { asText } from "./text";
 
 /** Item types offered for a manual reference, with labels. */
 export const MANUAL_TYPES: Record<string, string> = {
@@ -81,7 +82,7 @@ export interface FieldChange {
 }
 
 const empty = (v: unknown) => v === undefined || v === null || v === "" || (Array.isArray(v) && !v.some((x) => x !== null && x !== ""));
-const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null) || String(a ?? "") === String(b ?? "");
+const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null) || asText(a) === asText(b);
 
 /**
  * The properties a fresh lookup would change, in field order. `fields` maps property names

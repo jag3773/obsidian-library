@@ -1,5 +1,16 @@
 import { App, TFile, loadPdfJs } from "obsidian";
-import { ExtractResult, collectAnnotations } from "./annotations";
+import { ExtractResult, PdfDocumentLike, PdfOps, collectAnnotations } from "./annotations";
+
+/** The parts of PDF.js (Obsidian's loadPdfJs) this plugin uses. */
+interface PdfDocument extends PdfDocumentLike {
+	getMetadata(): Promise<{ info?: unknown } | null>;
+	destroy(): Promise<void>;
+}
+interface PdfJs {
+	getDocument(src: { data: Uint8Array; isEvalSupported: boolean; enableScripting: boolean; verbosity?: number }): { promise: Promise<PdfDocument> };
+	OPS: PdfOps;
+}
+const loadPdf = async (): Promise<PdfJs> => (await loadPdfJs()) as PdfJs;
 
 export interface PdfInfo {
 	text: string;
@@ -9,8 +20,7 @@ export interface PdfInfo {
 
 /** Read the opening pages and document metadata with Obsidian's bundled PDF.js. */
 export async function readPdf(app: App, file: TFile, pages = 3): Promise<PdfInfo> {
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const pdfjs: any = await loadPdfJs();
+	const pdfjs = await loadPdf();
 	const data = await app.vault.readBinary(file);
 	// PDFs in the inbox may come from anywhere: disable eval-based font rendering (CVE-2024-4367)
 	// and scripting.
@@ -20,7 +30,7 @@ export async function readPdf(app: App, file: TFile, pages = 3): Promise<PdfInfo
 		for (let i = 1; i <= Math.min(pages, doc.numPages); i++) {
 			const page = await doc.getPage(i);
 			const content = await page.getTextContent();
-			parts.push(content.items.map((it: { str?: string }) => it.str ?? "").join(" "));
+			parts.push(content.items.map((it) => (it as { str?: string }).str ?? "").join(" "));
 		}
 		const meta = await doc.getMetadata().catch(() => null);
 		const info = (meta?.info ?? {}) as { Title?: string; Author?: string };
@@ -42,8 +52,7 @@ export class PdfReadError extends Error {
 }
 
 /** Open PDF bytes with PDF.js; turns PDF.js's exceptions into PdfReadError. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function openPdf(pdfjs: any, data: ArrayBuffer | Uint8Array, name: string): Promise<any> {
+export async function openPdf(pdfjs: PdfJs, data: ArrayBuffer | Uint8Array, name: string): Promise<PdfDocument> {
 	try {
 		// Copy: PDF.js transfers the buffer to its worker.
 		const bytes = data instanceof Uint8Array ? data.slice() : new Uint8Array(data.slice(0));
@@ -57,8 +66,7 @@ export async function openPdf(pdfjs: any, data: ArrayBuffer | Uint8Array, name: 
 
 /** Read the annotations of a PDF with Obsidian's bundled PDF.js. */
 export async function readAnnotations(data: ArrayBuffer | Uint8Array, name: string): Promise<ExtractResult> {
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const pdfjs: any = await loadPdfJs();
+	const pdfjs = await loadPdf();
 	const doc = await openPdf(pdfjs, data, name);
 	try {
 		return await collectAnnotations(doc, pdfjs.OPS);

@@ -1,13 +1,14 @@
 {
   "name": "obsidian-stacks",
-  "version": "0.3.0",
-  "description": "A research library for Obsidian.",
+  "version": "0.3.1",
+  "description": "A research library for your vault.",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
     "test": "node esbuild.test.mjs && node --test test-dist/*.test.mjs",
-    "bbt-accuracy": "esbuild scripts/bbt-accuracy.ts --bundle --platform=node --format=esm --outfile=test-dist/bbt-accuracy.mjs --log-level=warning && node test-dist/bbt-accuracy.mjs"
+    "bbt-accuracy": "esbuild scripts/bbt-accuracy.ts --bundle --platform=node --format=esm --outfile=test-dist/bbt-accuracy.mjs --log-level=warning && node test-dist/bbt-accuracy.mjs",
+    "lint": "eslint src"
   },
   "keywords": [
     "obsidian",
@@ -20,13 +21,15 @@
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^20.14.0",
-    "builtin-modules": "^3.3.0",
     "esbuild": "^0.28.2",
+    "eslint": "^9.39.5",
+    "eslint-plugin-obsidianmd": "^0.5.1",
     "linkedom": "^0.18.15",
     "obsidian": "^1.8.7",
     "pdfjs-dist": "^4.10.38",
     "tslib": "^2.6.3",
     "typescript": "^5.4.5",
+    "typescript-eslint": "^8.72.1",
     "yaml": "^2.9.1"
   }
 }
