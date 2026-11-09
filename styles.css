@@ -7,6 +7,11 @@
   border-color: var(--text-error) !important;
 }
 
+.stacks-error {
+  color: var(--text-error);
+  min-height: 1.2em;
+}
+
 .stacks-conflict {
   width: 100%;
   margin: 0.5em 0 1em;

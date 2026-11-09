@@ -10,7 +10,7 @@ If Obsidian is where you think, it should be enough to manage the sources behind
 
 [Get started](#install-beta) · [Available today](#available-today) · [The road ahead](#the-road-ahead)
 
-> **Early beta · 0.2.x.** Capture, metadata lookup, citekeys, PDF filing, library views, annotation extraction, and a tablet reading round trip are available now. Stacks is still growing toward a complete reference manager. Zotero migration and citation export are future work.
+> **Early beta · 0.2.x.** Capture, metadata lookup, manual references, citekeys, PDF filing, library views, annotation extraction, a tablet reading round trip, Zotero import, and bibliography export are available now. Stacks is still growing toward a complete reference manager. In-editor citations are future work.
 
 ## Let your reading become part of your thinking
 
@@ -26,6 +26,10 @@ Zotero has helped researchers collect, organize, and cite their work for years. 
 - **Turn an inbox into a library.** Drop in a Web Clipper note or a PDF. Clipped notes are enriched and filed; what Web Clipper saved (author, published date, description) fills anything the lookup can't find, which covers sites that turn Stacks away. Looked-up values replace the guesses Web Clipper made from the page, such as its page title; the URL and status are kept. PDFs are checked for a DOI or ISBN in their opening pages, paired with a reference note, and moved into your attachments folder. When a lookup cannot identify a PDF, its document metadata or filename provides a starting point.
 - **Complete a reference as you write.** Add an ISBN, DOI, or URL property to a note in your references folder. Stacks can fill missing metadata and name the note for you. Metadata enrichment preserves populated properties and the existing note body.
 - **Start with the details that matter.** References come with a title, authors, publication date (`published`), year, abstract, and, where the source has them, publisher, ISBN, or DOI. Book pages on Amazon, Goodreads, and Kobo, GitHub repositories, and news and blog articles are read the way Zotero's translators read them.
+- **Add what no lookup can find.** **New reference without a lookup** takes a type, title, authors and date and creates the note and its citekey offline: talks, interviews, older books, internal documents. **Refresh metadata** looks a reference up again and shows each changed field to accept or skip.
+- **Keep complete citation data.** Editors, translators, volume, issue, pages, edition, place, series, language, ISSN and access dates are kept when the source has them, each mapped to your own property names. See [citation fields](docs/citation-fields.md).
+- **Export a bibliography.** CSL-JSON for Pandoc and Quarto, or BibLaTeX or BibTeX, for the whole library or a filtered project, written on demand or automatically whenever references change.
+- **Move from Zotero.** **Import from Zotero** reads a Better BibTeX JSON export, previews what it will do, adds properties to your existing notes without touching their bodies, and can be undone. See [migrating from Zotero](docs/migrating-from-zotero.md).
 - **Give sources useful citekeys.** Use a configurable Better BibTeX-style formula, with collision handling. The default is `auth.lower + shorttitle(3, 3) + year`. Citekey generation is available today; inserting and formatting citations is still ahead.
 - **Browse with Obsidian Bases.** Choose your library's `.base` file, or create a starter Base. Match fields to your vault's property names and browse your collection with tables, filters, and reading-status views.
 - **Turn highlights into notes.** Run **Extract annotations** on a reference and its PDF's highlights, underlines, and comments appear in the note as callouts grouped by page, each linked to its page. Colors map to callout types you choose. Re-extracting updates only Stacks' marked block, so your own writing in the note is never touched. See [Highlights, comments and the reading round trip](docs/annotations.md).
@@ -44,15 +48,15 @@ No separate library database to maintain. The notes and files in your vault are 
 
 The destination is the whole journey: **collect → read → understand → write → cite**.
 
-The next pieces include bringing an existing Zotero library across, keeping complete citation metadata, and citing sources in finished work. Search, duplicate merging, attachment maintenance, and dependable work across devices matter just as much as the first capture.
+The next pieces include importing other bibliography files and citing sources while you write. Search, duplicate merging, attachment maintenance, and dependable work across devices matter just as much as the first capture.
 
 | The next step | Proposals to explore |
 | --- | --- |
-| Bring your library with you | [Zotero migration](https://github.com/jag3773/obsidian-stacks/issues/18), [bibliography imports](https://github.com/jag3773/obsidian-stacks/issues/17) |
+| Bring your library with you | [Bibliography imports](https://github.com/jag3773/obsidian-stacks/issues/17) |
 | Capture more of what you find | [Scholarly web capture](https://github.com/jag3773/obsidian-stacks/issues/23), [full-text retrieval](https://github.com/jag3773/obsidian-stacks/issues/24) |
 | Return to what mattered | [Highlights into notes](https://github.com/jag3773/obsidian-stacks/issues/22), [full-text search](https://github.com/jag3773/obsidian-stacks/issues/25) |
-| Write with your sources | [Portable bibliographies](https://github.com/jag3773/obsidian-stacks/issues/19), [citation styles](https://github.com/jag3773/obsidian-stacks/issues/20), [citations while drafting](https://github.com/jag3773/obsidian-stacks/issues/21) |
-| Trust a growing collection | [Complete metadata](https://github.com/jag3773/obsidian-stacks/issues/15), [duplicate merging](https://github.com/jag3773/obsidian-stacks/issues/26), [library health checks](https://github.com/jag3773/obsidian-stacks/issues/28) |
+| Write with your sources | [Citation styles](https://github.com/jag3773/obsidian-stacks/issues/20), [citations while drafting](https://github.com/jag3773/obsidian-stacks/issues/21) |
+| Trust a growing collection | [Duplicate merging](https://github.com/jag3773/obsidian-stacks/issues/26), [library health checks](https://github.com/jag3773/obsidian-stacks/issues/28) |
 | Keep reading across devices | [Mobile and offline reliability](https://github.com/jag3773/obsidian-stacks/issues/30), [external-reader round trip](https://github.com/jag3773/obsidian-stacks/issues/29) |
 
 The [feature backlog](https://github.com/jag3773/obsidian-stacks/issues?q=is%3Aissue%20is%3Aopen%20label%3Aenhancement) tracks those gaps. It is a set of proposals to prioritize, not a promise that every feature will ship. [PLAN.md](PLAN.md) describes the implementation stages and design choices.

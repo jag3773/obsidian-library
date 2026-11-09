@@ -210,14 +210,18 @@ test("a Book's edition (workExample) supplies its ISBN and date", () => {
 	assert.deepEqual(r.authors, ["A Writer"]);
 });
 
-test("Amazon keeps authors and leaves out translators and narrators", () => {
+test("Amazon sorts its byline into authors, editors, translators and other contributors", () => {
 	const person = (name: string, role: string) =>
 		`<span class="author"><a class="a-link-normal" href="#">${name}</a><span class="contribution"><span>(${role})</span></span></span>`;
 	const html = `<span id="productTitle">Ficciones</span><div id="bylineInfo">${person("Jorge Luis Borges", "Author")}${person("Andrew Hurley", "Translator")}${person("Ana Reader", "Narrator")}</div>`;
 	const r = parseWebpage(html, "https://www.amazon.com/dp/x");
 	assert.deepEqual(r.authors, ["Jorge Luis Borges"]);
+	assert.deepEqual(r.translators, ["Andrew Hurley"]);
+	assert.deepEqual(r.contributors, ["Ana Reader"]);
 	const edited = parseWebpage(html.replace("(Author)", "(Editor)"), "https://www.amazon.com/dp/x");
-	assert.deepEqual(edited.authors, ["Jorge Luis Borges", "Andrew Hurley", "Ana Reader"], "with no author, every contributor is listed");
+	assert.deepEqual(edited.authors, []);
+	assert.deepEqual(edited.editors, ["Jorge Luis Borges"]);
+	assert.deepEqual(edited.familyNames, ["Borges"], "an edited book's citekey uses its editor");
 });
 
 test("Goodreads' date comes from its page data when the visible line is missing", () => {
@@ -319,8 +323,8 @@ test("an Amazon byline with only a translator doesn't beat the page's real autho
 	const withLd = byline + `<script type="application/ld+json">{"@type":"Book","name":"Ficciones","author":{"name":"Real Author"}}</script>`;
 	assert.deepEqual(parseWebpage(withLd, "https://www.amazon.com/dp/x").authors, ["Real Author"]);
 	const alone = parseWebpage(byline, "https://www.amazon.com/dp/x");
-	assert.deepEqual(alone.authors, ["Ana Translator"], "with nothing else, the contributor stands in");
-	assert.equal(alone.contributorsOnly, true);
+	assert.deepEqual(alone.authors, [], "a translator is never the author (#15)");
+	assert.deepEqual(alone.translators, ["Ana Translator"]);
 });
 
 test("a translator-only Amazon page takes the author from the ISBN's record", async () => {
@@ -333,7 +337,7 @@ test("a translator-only Amazon page takes the author from the ISBN's record", as
 	const r = await lookup(fetch, { kind: "url", value: "https://www.amazon.com/dp/x" });
 	assert.deepEqual(r?.authors, ["Jorge Luis Borges"]);
 	assert.deepEqual(r?.familyNames, ["Borges"]);
-	assert.equal(r?.contributorsOnly, undefined);
+	assert.deepEqual(r?.translators, ["Ana Translator"]);
 });
 
 test("a sparse Open Library record is completed from Google Books, keeping the page's values", async () => {

@@ -45,7 +45,7 @@ export class Inbox {
 		const fm = (info.exists ? parseYaml(info.frontmatter) : {}) ?? {};
 		const url = s.urlProperties.map((k) => fm[k]).find((v) => typeof v === "string" && /^https?:\/\//i.test(v)) as string | undefined;
 		if (!url) {
-			new Notice(`Library: no URL found in ${file.name}; left in the inbox.`);
+			new Notice(`Stacks: no URL found in ${file.name}; left in the inbox.`);
 			return null;
 		}
 		const data = await lookup(this.fetch, { kind: "url", value: url }, { crossrefMailto: s.crossrefMailto });
@@ -60,13 +60,13 @@ export class Inbox {
 			// Check the enriched identifiers and the clip's own URL, whether or not the lookup worked.
 			const dup = this.library.findExisting(basis, file) ?? this.library.findExisting({ url }, file);
 			if (dup) {
-				new Notice(`Library: ${file.name} matches existing ${dup.basename}; left in the inbox.`);
+				new Notice(`Stacks: ${file.name} matches existing ${dup.basename}; left in the inbox.`);
 				return null;
 			}
 			// The clip keeps the URL property it came from, so later captures of the same original
 			// URL still match after the mapped url becomes the canonical one.
 			const moved = await this.library.complete(file, basis, s.clipStatus, [url], data ? fm : undefined);
-			new Notice(`Library: filed ${moved.basename}`);
+			new Notice(`Stacks: filed ${moved.basename}`);
 			return moved;
 		});
 	}
@@ -105,12 +105,12 @@ export class Inbox {
 			const dup = this.library.findExisting(found);
 			if (dup) {
 				await this.library.attach(dup, file, naming);
-				new Notice(`Library: attached ${file.name} to existing ${dup.basename}`);
+				new Notice(`Stacks: attached ${file.name} to existing ${dup.basename}`);
 				return dup;
 			}
 			const note = await this.library.create(found, s.defaultStatus);
 			await this.library.attach(note, file, naming);
-			new Notice(`Library: created ${note.basename} from ${found.source}`);
+			new Notice(`Stacks: created ${note.basename} from ${found.source}`);
 			return note;
 		});
 	}

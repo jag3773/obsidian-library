@@ -84,6 +84,8 @@ function joinContent(fm: Record<string, unknown> | null, body: string): string {
 }
 
 export class Vault extends Events {
+	adapter = new Adapter();
+	configDir = ".obsidian";
 	files = new Map<string, TAbstractFile>();
 	contents = new Map<TFile, string | ArrayBuffer>();
 	root: TFolder;
@@ -158,7 +160,6 @@ export class Vault extends Events {
 		this.contents.set(f, content);
 		this.app.metadataCache.index(f, content);
 	}
-	adapter = new FileSystemAdapter();
 	async process(f: TFile, fn: (data: string) => string): Promise<string> {
 		const next = fn(String(this.contents.get(f) ?? ""));
 		this.write(f, next);
@@ -184,6 +185,9 @@ export class Vault extends Events {
 	}
 	async read(f: TFile): Promise<string> {
 		return String(this.contents.get(f) ?? "");
+	}
+	async cachedRead(f: TFile): Promise<string> {
+		return this.read(f);
 	}
 	async readBinary(f: TFile): Promise<ArrayBuffer> {
 		const c = this.contents.get(f);
@@ -214,6 +218,35 @@ export class FileSystemAdapter {
 	}
 }
 
+/** Raw file access beneath the vault model, as Obsidian's DataAdapter. */
+export class Adapter extends FileSystemAdapter {
+	files = new Map<string, string>();
+	writes: string[] = [];
+	/** Test hook: make rename fail (some platforms refuse to replace an existing file). */
+	failRename = false;
+	async exists(p: string) {
+		return this.files.has(normalizePath(p));
+	}
+	async read(p: string) {
+		const v = this.files.get(normalizePath(p));
+		if (v === undefined) throw new Error(`ENOENT ${p}`);
+		return v;
+	}
+	async write(p: string, data: string) {
+		this.writes.push(normalizePath(p));
+		this.files.set(normalizePath(p), data);
+	}
+	async rename(from: string, to: string) {
+		if (this.failRename) throw new Error("Destination file already exists!");
+		const v = await this.read(from);
+		this.files.delete(normalizePath(from));
+		this.files.set(normalizePath(to), v);
+	}
+	async remove(p: string) {
+		this.files.delete(normalizePath(p));
+	}
+}
+
 export const Platform = { isDesktopApp: false, isMobile: false };
 
 export class MetadataCache extends Events {
@@ -223,13 +256,21 @@ export class MetadataCache extends Events {
 	}
 	/** Index content on a later macrotask (immediately for setup files). */
 	index(f: TFile, content: string, now = false) {
+		// Like Obsidian, a note whose frontmatter can't be parsed is indexed without properties.
+		const props = () => {
+			try {
+				return splitContent(content).fm ?? undefined;
+			} catch {
+				return undefined;
+			}
+		};
 		const apply = () => {
 			if (this.app.vault.getAbstractFileByPath(f.path) !== f) return;
 			if (this.app.vault.contents.get(f) !== content) return;
-			this.cache.set(f, splitContent(content).fm ?? undefined);
+			this.cache.set(f, props());
 			this.trigger("changed", f, content, {});
 		};
-		if (now) this.cache.set(f, splitContent(content).fm ?? undefined);
+		if (now) this.cache.set(f, props());
 		else setImmediate(apply);
 	}
 	getFileCache(f: TFile) {
@@ -266,6 +307,12 @@ export class FileManager {
 	async renameFile(f: TFile, newPath: string): Promise<void> {
 		await Promise.resolve();
 		this.app.vault.rename(f, newPath);
+	}
+	trashed: string[] = [];
+	async trashFile(f: TFile): Promise<void> {
+		await Promise.resolve();
+		this.trashed.push(f.path);
+		this.app.vault.delete(f);
 	}
 }
 

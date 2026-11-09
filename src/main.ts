@@ -1,5 +1,7 @@
-import { Notice, Platform, Plugin, TAbstractFile, TFile, requestUrl } from "obsidian";
+import { Menu, Notice, Platform, Plugin, TAbstractFile, TFile, normalizePath, requestUrl } from "obsidian";
+import { FORMAT_LABELS, render } from "./bibliography";
 import { nodeHost } from "./desktop";
+import { BibliographyExporter } from "./export";
 import { Extractor, describeExtraction } from "./extract";
 import { Identifier, detectIdentifier } from "./identifiers";
 import { Inbox } from "./inbox";
@@ -9,12 +11,19 @@ import { lookup } from "./metadata/lookup";
 import { Host, RoundTrip, runPreExtraction, toArrayBuffer } from "./roundtrip";
 import { LibrarySettingTab, LibrarySettings, withDefaults } from "./settings";
 import { AddReferenceModal } from "./ui/AddReferenceModal";
+import { ReferenceData } from "./metadata/types";
+import { NewReferenceModal } from "./ui/NewReferenceModal";
+import { RefreshModal } from "./ui/RefreshModal";
+import { ImportModal } from "./ui/ImportModal";
+import { ReportModal } from "./ui/ReportModal";
+import { ZoteroImporter } from "./zoteroImport";
 import { ConflictModal } from "./ui/ConflictModal";
 
 const PREFIX = "Stacks";
 const COMPLETE_DEBOUNCE_MS = 2000;
 const INBOX_SETTLE_MS = 750;
 const BUSY_SETTLE_MS = 1500;
+const EXPORT_DEBOUNCE_MS = 5000;
 const PDF_SAVE_DEBOUNCE_MS = 2000;
 
 const sameId = (a: Identifier | null, b: Identifier | null) => !!a && !!b && a.kind === b.kind && a.value === b.value;
@@ -23,11 +32,15 @@ export default class LibraryPlugin extends Plugin {
 	settings!: LibrarySettings;
 	library!: Library;
 	inbox!: Inbox;
+	exporter!: BibliographyExporter;
+	importer!: ZoteroImporter;
 	extractor!: Extractor;
 	/** Desktop only; null on mobile. */
 	roundTrip: RoundTrip | null = null;
 	private host: Host | null = null;
 	private fetcher!: Fetcher;
+	/** The pending automatic bibliography export, if any. */
+	private exportTimer: number | null = null;
 	/** False once unloaded; queued and in-flight work checks it before touching the vault. */
 	private alive = false;
 	/** Paths the plugin is currently writing, so its own edits don't retrigger handlers. */
@@ -58,6 +71,12 @@ export default class LibraryPlugin extends Plugin {
 		};
 		this.library = new Library(this.app, () => this.settings, () => this.alive);
 		this.inbox = new Inbox(this.app, this.library, this.fetcher, () => this.settings);
+		this.exporter = new BibliographyExporter(this.app, this.library, () => this.settings);
+		const pluginDir = this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`;
+		this.importer = new ZoteroImporter(this.app, this.library, () => this.settings, `${pluginDir}/backups`, async (path) => {
+			this.settings.lastImportBackup = path;
+			await this.saveSettings();
+		});
 		this.extractor = new Extractor(this.app, this.library, () => this.settings, () => this.alive);
 		this.host = this.createHost();
 		if (this.host)
@@ -78,8 +97,23 @@ export default class LibraryPlugin extends Plugin {
 
 		this.addCommand({ id: "add-reference", name: "Add reference", callback: () => this.openAddReference() });
 		this.addCommand({
+			id: "new-reference",
+			name: "New reference without a lookup",
+			callback: () => new NewReferenceModal(this.app, (data) => void this.createManualReference(data)).open(),
+		});
+		this.addCommand({
+			id: "refresh-metadata",
+			name: "Refresh metadata from ISBN, DOI or URL",
+			checkCallback: (checking) => {
+				const file = this.app.workspace.getActiveFile();
+				if (!file || !this.library.isReference(file) || !this.library.identifierOf(file)) return false;
+				if (!checking) void this.refreshMetadata(file);
+				return true;
+			},
+		});
+		this.addCommand({
 			id: "complete-current-reference",
-			name: "Complete current reference from its ISBN, DOI or URL",
+			name: "Complete current reference",
 			checkCallback: (checking) => {
 				const file = this.app.workspace.getActiveFile();
 				if (!file || file.extension !== "md") return false;
@@ -103,6 +137,40 @@ export default class LibraryPlugin extends Plugin {
 			},
 		});
 
+		this.addCommand({ id: "import-zotero", name: "Import from Zotero (Better BibTeX JSON)", callback: () => this.openImport() });
+		this.addCommand({
+			id: "undo-zotero-import",
+			name: "Undo last Zotero import",
+			checkCallback: (checking) => {
+				if (!this.settings.lastImportBackup) return false;
+				if (!checking) void this.undoImport();
+				return true;
+			},
+		});
+		this.addCommand({ id: "export-bibliography", name: "Export bibliography", callback: () => void this.exportBibliography(true) });
+		this.addCommand({
+			id: "copy-citation",
+			name: "Copy bibliography entry for current reference",
+			checkCallback: (checking) => {
+				const file = this.app.workspace.getActiveFile();
+				if (!file || !this.library.isReference(file)) return false;
+				if (!checking) void this.copyBibliography([file]);
+				return true;
+			},
+		});
+		// Several references selected in the file explorer.
+		this.registerEvent(
+			this.app.workspace.on("files-menu", (menu: Menu, files: TAbstractFile[]) => {
+				const refs = files.filter((f): f is TFile => f instanceof TFile && this.library.isReference(f));
+				if (!refs.length) return;
+				menu.addItem((item) =>
+					item
+						.setTitle(`Copy bibliography (${FORMAT_LABELS[this.settings.exportFormat]})`)
+						.setIcon("library")
+						.onClick(() => void this.copyBibliography(refs))
+				);
+			})
+		);
 		this.addCommand({
 			id: "extract-annotations",
 			name: "Extract annotations for current note",
@@ -140,6 +208,7 @@ export default class LibraryPlugin extends Plugin {
 			this.registerEvent(
 				this.app.metadataCache.on("changed", (file) => {
 					this.scheduleCompletion(file);
+					if (this.library.isReference(file)) this.scheduleExport();
 					this.onStatusChange(file);
 				})
 			);
@@ -148,6 +217,9 @@ export default class LibraryPlugin extends Plugin {
 			this.registerEvent(
 				this.app.vault.on("rename", (f, oldPath) => {
 					this.cancelCompletion(oldPath);
+					// Into, within or out of the references folder.
+					const folder = normalizePath(this.settings.referencesFolder);
+					if (f instanceof TFile && f.extension === "md" && (this.library.isReference(f) || oldPath.startsWith(`${folder}/`))) this.scheduleExport();
 					const st = this.statuses.get(oldPath);
 					this.statuses.delete(oldPath);
 					if (st !== undefined) this.statuses.set(f.path, st);
@@ -157,6 +229,7 @@ export default class LibraryPlugin extends Plugin {
 			this.registerEvent(
 				this.app.vault.on("delete", (f) => {
 					this.cancelCompletion(f.path);
+					if (f instanceof TFile && f.extension === "md" && this.library.inFolder(f, this.settings.referencesFolder)) this.scheduleExport();
 					this.statuses.delete(f.path);
 				})
 			);
@@ -182,6 +255,7 @@ export default class LibraryPlugin extends Plugin {
 
 	onunload(): void {
 		this.alive = false;
+		this.exportTimer = null;
 		this.roundTrip?.stop();
 		this.pdfTimers.clear();
 		for (const t of this.timers) window.clearTimeout(t);
@@ -351,7 +425,8 @@ export default class LibraryPlugin extends Plugin {
 	async completeFromProperties(file: TFile, explicit: boolean, scheduled?: Identifier): Promise<void> {
 		const id = this.library.identifierOf(file);
 		if (!id) {
-			if (explicit) new Notice(`${PREFIX}: add an ISBN, DOI or URL property first.`);
+			// No identifier: name it from its own properties, with no network request (#16).
+			if (explicit) await this.completeLocally(file);
 			return;
 		}
 		if (!explicit && !this.autoEligible(file, scheduled ?? id)) return;
@@ -375,6 +450,155 @@ export default class LibraryPlugin extends Plugin {
 		});
 	}
 
+	/** Export soon, once edits settle; each change restarts the wait. Only when auto-export is on. */
+	scheduleExport(): void {
+		if (!this.alive || !this.settings.autoExport) return;
+		if (this.exportTimer !== null) this.clearLater(this.exportTimer);
+		this.exportTimer = this.later(() => {
+			this.exportTimer = null;
+			// The setting may have been turned off while this waited.
+			if (this.settings.autoExport) void this.exportBibliography(false);
+		}, EXPORT_DEBOUNCE_MS);
+	}
+
+	/** Drop a pending automatic export (auto-export turned off). */
+	cancelExport(): void {
+		if (this.exportTimer !== null) this.clearLater(this.exportTimer);
+		this.exportTimer = null;
+	}
+
+	/**
+	 * Write the bibliography. `explicit` (the command or button) reports the result; automatic
+	 * exports stay quiet unless they fail.
+	 */
+	async exportBibliography(explicit: boolean): Promise<void> {
+		try {
+			const r = await this.exporter.export();
+			if (!explicit) {
+				if (r.problems.length) console.info(`[${PREFIX}] bibliography: ${r.problems.length} problems`, r.problems);
+				return;
+			}
+			const summary = [
+				`${r.items.length} references ${r.written ? "written to" : "already up to date in"} ${r.path} (${FORMAT_LABELS[r.format]}).`,
+				...(r.filtered ? [`${r.filtered} notes left out by the filter "${this.settings.exportFilter}".`] : []),
+			];
+			if (!r.problems.length) {
+				new Notice(`${PREFIX}: ${summary.join(" ")}`);
+				return;
+			}
+			const lines = r.problems.map((p) => `${p.citekey ?? p.path}: ${p.problem}`);
+			new ReportModal(this.app, "Bibliography exported", summary, [{ heading: "To check", lines }]).open();
+		} catch (e) {
+			this.report(e);
+		}
+	}
+
+	/** Copy the given references' entries to the clipboard in the configured format. */
+	async copyBibliography(files: TFile[]): Promise<void> {
+		const bib = this.exporter.build(files, "");
+		if (!bib.items.length) {
+			new Notice(`${PREFIX}: nothing to copy. ${bib.problems.map((p) => p.problem).join("; ")}`);
+			return;
+		}
+		await navigator.clipboard.writeText(render(bib.items, this.settings.exportFormat));
+		new Notice(`${PREFIX}: copied ${bib.items.length} ${bib.items.length === 1 ? "entry" : "entries"} (${FORMAT_LABELS[this.settings.exportFormat]}).`);
+	}
+
+	/** Create a manual reference (no lookup), unless its identifier is already in the library. */
+	async createManualReference(data: ReferenceData): Promise<TFile | undefined> {
+		try {
+			const { file, existing } = await this.library.exclusive(async () => {
+				const found = this.library.findExisting(data);
+				if (found) return { file: found, existing: true };
+				const created = await this.library.create(data, this.settings.defaultStatus);
+				this.settle(created.path);
+				return { file: created, existing: false };
+			});
+			await this.app.workspace.getLeaf(false).openFile(file);
+			new Notice(existing ? `${PREFIX}: already in your library as ${file.basename}.` : `${PREFIX}: created ${file.basename}.`);
+			return file;
+		} catch (e) {
+			this.report(e);
+			return undefined;
+		}
+	}
+
+	/** Give a note without an identifier a citekey and its filename from its own properties. */
+	private async completeLocally(file: TFile): Promise<void> {
+		if (!this.library.isReference(file)) {
+			new Notice(`${PREFIX}: move the note into ${this.settings.referencesFolder} first, or add an ISBN, DOI or URL.`);
+			return;
+		}
+		const title = String(this.library.frontmatter(file)[this.library.prop("title")] ?? "").trim();
+		if (!title) {
+			new Notice(`${PREFIX}: add a title (and ideally authors and a year) first.`);
+			return;
+		}
+		await this.guard(file, async () => {
+			const moved = await this.library.exclusive(() => this.library.complete(file, null, this.settings.defaultStatus));
+			new Notice(`${PREFIX}: ${moved.basename} is ready, without a lookup.`);
+		});
+	}
+
+	/** Look the note's identifier up again and offer each changed field for review. */
+	async refreshMetadata(file: TFile): Promise<void> {
+		const id = this.library.identifierOf(file);
+		if (!id) return;
+		const pending = new Notice(`${PREFIX}: looking up ${id.value}…`, 0);
+		try {
+			const data = await lookup(this.fetcher, id, { crossrefMailto: this.settings.crossrefMailto });
+			if (!data) {
+				new Notice(`${PREFIX}: nothing found for ${id.value}.`);
+				return;
+			}
+			const changes = this.library.refreshChanges(file, data);
+			if (!changes.length) {
+				new Notice(`${PREFIX}: ${file.basename} already matches ${data.source}.`);
+				return;
+			}
+			new RefreshModal(this.app, file.basename, data.source, changes, (chosen) =>
+				void this.guard(file, async () => {
+					await this.library.exclusive(() => this.library.applyChanges(file, chosen));
+					if (chosen.length) new Notice(`${PREFIX}: updated ${chosen.length} ${chosen.length === 1 ? "field" : "fields"} on ${file.basename}.`);
+				})
+			).open();
+		} catch (e) {
+			this.report(e);
+		} finally {
+			pending.hide();
+		}
+	}
+
+	private openImport(): void {
+		new ImportModal(
+			this.app,
+			this.importer,
+			this.settings.zoteroImport,
+			this.settings.statuses,
+			() => this.saveSettings(),
+			(reportPath) => {
+				const report = this.app.vault.getAbstractFileByPath(reportPath);
+				if (report instanceof TFile) void this.app.workspace.getLeaf(false).openFile(report);
+				new Notice(`${PREFIX}: import done. The report is ${reportPath}.`);
+			}
+		).open();
+	}
+
+	/** Reverse the last import from its backup. */
+	async undoImport(): Promise<void> {
+		const path = this.settings.lastImportBackup;
+		if (!path) return;
+		try {
+			const r = await this.importer.undo(path);
+			this.settings.lastImportBackup = "";
+			await this.saveSettings();
+			new Notice(
+				`${PREFIX}: restored ${r.restored} notes, moved ${r.trashed} created notes to the trash.${r.skipped.length ? ` Skipped (changed or missing): ${r.skipped.join(", ")}` : ""}`
+			);
+		} catch (e) {
+			this.report(e);
+		}
+	}
 	/** The active reference note, or the reference note of the active PDF. */
 	private activeReference(): TFile | null {
 		const file = this.app.workspace.getActiveFile();

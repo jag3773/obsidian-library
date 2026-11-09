@@ -6,7 +6,7 @@ import { parseHtml, tidy } from "./html";
 import { Fetcher } from "./http";
 import { readJsonLd } from "./jsonld";
 import { siteLayer } from "./sites";
-import { ReferenceData } from "./types";
+import { ReferenceData, citekeyFamilies } from "./types";
 
 /** Limits that keep a hostile page from stalling Obsidian, far above what real pages use. */
 export const META_LIMITS = { tags: 2000, perKey: 50 };
@@ -81,6 +81,12 @@ function metaLayer(doc: Document): Found {
 		isbn: [one("citation_isbn"), one("book:isbn"), one("books:isbn")].map((v) => (v ? canonicalIsbn(v) : null)).find(Boolean) ?? undefined,
 		doi: one("citation_doi", "prism.doi", "dc.identifier", "dcterms.identifier")?.replace(/^(doi:\s*|https?:\/\/(dx\.)?doi\.org\/)/i, "").match(/^10\.\S+/)?.[0],
 		url: httpUrl(one("og:url")),
+		volume: one("citation_volume", "prism.volume"),
+		issue: one("citation_issue", "prism.number"),
+		pages: pageRange(one("citation_firstpage", "prism.startingpage"), one("citation_lastpage", "prism.endingpage")),
+		issn: one("citation_issn", "prism.issn", "prism.eissn"),
+		language: one("citation_language", "dc.language", "dcterms.language"),
+		editors: many("citation_editor"),
 		abstract: one("citation_abstract", "dc.description", "dcterms.abstract", "description", "og:description", "twitter:description"),
 	};
 }
@@ -121,6 +127,8 @@ function timeElement(doc: Document): string | undefined {
 	return el?.getAttribute("datetime") ?? undefined;
 }
 
+const pageRange = (first: string | undefined, last: string | undefined) => (first ? (last && last !== first ? `${first}-${last}` : first) : undefined);
+
 /** "Article | Site" -> "Article" when Site is the page's site name. */
 function stripSite(title: string | undefined, site: string | undefined): string | undefined {
 	if (!title || !site) return title;
@@ -140,14 +148,16 @@ export function parseWebpage(html: string, url: string): ReferenceData {
 	} catch {
 		/* keep empty */
 	}
-	// Contributors (a translator, an editor) only stand in when no source names an author.
-	const authors = found.authors ?? found.contributors ?? [];
+	const authors = found.authors ?? [];
 	return {
 		type: found.type ?? (VIDEO_HOSTS.test(host) ? "video" : "webpage"),
 		title: found.title ?? url,
 		authors,
-		familyNames: authors.map(familyFromFullName),
-		contributorsOnly: !found.authors?.length && !!found.contributors?.length ? true : undefined,
+		familyNames: citekeyFamilies(authors, found.editors, familyFromFullName),
+		editors: found.editors,
+		translators: found.translators,
+		contributors: found.contributors,
+		names: found.names,
 		date: found.date,
 		year: yearOf(found.date),
 		journal: found.type === "book" ? undefined : found.journal,
@@ -157,6 +167,13 @@ export function parseWebpage(html: string, url: string): ReferenceData {
 		// Only trust a page's own URL when it is an absolute http(s) URL; never a javascript: or data: link.
 		url: httpUrl(found.url) ?? url,
 		abstract: found.abstract,
+		language: found.language,
+		volume: found.volume,
+		issue: found.issue,
+		pages: found.pages,
+		edition: found.edition,
+		place: found.place,
+		issn: found.issn,
 		source: "web page",
 	};
 }
