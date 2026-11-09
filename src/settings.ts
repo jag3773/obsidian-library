@@ -2,6 +2,7 @@ import { App, PluginSettingTab, Setting, TFile, normalizePath, parseYaml, string
 import { BaseConfig, baseDisplayNames, baseFolder, basePropertyNames, matchProperties, starterBase, validateBase } from "./bases";
 import { BibFormat, FORMAT_EXTENSIONS, FORMAT_LABELS, parseFilter } from "./bibliography";
 import { parsePattern } from "./citekey";
+import { DEFAULT_IMPORT_CHOICES, ImportChoices } from "./zotero";
 import type LibraryPlugin from "./main";
 import { PathSuggest, filePaths, folderPaths } from "./ui/PathSuggest";
 
@@ -36,6 +37,10 @@ export interface LibrarySettings {
 	exportFilter: string;
 	/** Rewrite the bibliography a few seconds after reference notes change. */
 	autoExport: boolean;
+	/** The last Zotero import's choices, so a re-run starts from them. */
+	zoteroImport: ImportChoices;
+	/** Backup of the last Zotero import, for undo. */
+	lastImportBackup: string;
 }
 
 export const DEFAULT_SETTINGS: LibrarySettings = {
@@ -60,6 +65,8 @@ export const DEFAULT_SETTINGS: LibrarySettings = {
 	exportFormat: "csl-json",
 	exportFilter: "",
 	autoExport: false,
+	zoteroImport: { ...DEFAULT_IMPORT_CHOICES },
+	lastImportBackup: "",
 };
 
 /** Merge saved data over defaults, including the nested property map. */
@@ -70,6 +77,8 @@ export function withDefaults(saved: Partial<LibrarySettings> | null | undefined)
 	if (!Array.isArray(s.statuses)) s.statuses = [...DEFAULT_SETTINGS.statuses];
 	if (!Array.isArray(s.urlProperties)) s.urlProperties = [...DEFAULT_SETTINGS.urlProperties];
 	if (!(s.exportFormat in FORMAT_LABELS)) s.exportFormat = DEFAULT_SETTINGS.exportFormat;
+	s.zoteroImport = { ...DEFAULT_IMPORT_CHOICES, ...(saved?.zoteroImport ?? {}) };
+	s.zoteroImport.collections = { ...(s.zoteroImport.collections ?? {}) };
 	if (typeof s.libraryBase !== "string") s.libraryBase = "";
 	// An empty references folder would make every note in the vault a "reference" that
 	// automatic completion could rename and move.

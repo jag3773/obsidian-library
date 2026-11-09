@@ -114,6 +114,7 @@ export class Adapter {
 
 export class Vault extends Events {
 	adapter = new Adapter();
+	configDir = ".obsidian";
 	files = new Map<string, TAbstractFile>();
 	contents = new Map<TFile, string | ArrayBuffer>();
 	root: TFolder;
@@ -191,6 +192,20 @@ export class Vault extends Events {
 	async read(f: TFile): Promise<string> {
 		return String(this.contents.get(f) ?? "");
 	}
+	async cachedRead(f: TFile): Promise<string> {
+		return this.read(f);
+	}
+	async modify(f: TFile, data: string): Promise<void> {
+		await Promise.resolve();
+		this.write(f, data);
+		this.trigger("modify", f);
+	}
+	async process(f: TFile, fn: (data: string) => string): Promise<string> {
+		await Promise.resolve();
+		const next = fn(String(this.contents.get(f) ?? ""));
+		this.write(f, next);
+		return next;
+	}
 	async readBinary(f: TFile): Promise<ArrayBuffer> {
 		const c = this.contents.get(f);
 		return c instanceof ArrayBuffer ? c : new TextEncoder().encode(String(c ?? "")).buffer;
@@ -220,13 +235,21 @@ export class MetadataCache extends Events {
 	}
 	/** Index content on a later macrotask (immediately for setup files). */
 	index(f: TFile, content: string, now = false) {
+		// Like Obsidian, a note whose frontmatter can't be parsed is indexed without properties.
+		const props = () => {
+			try {
+				return splitContent(content).fm ?? undefined;
+			} catch {
+				return undefined;
+			}
+		};
 		const apply = () => {
 			if (this.app.vault.getAbstractFileByPath(f.path) !== f) return;
 			if (this.app.vault.contents.get(f) !== content) return;
-			this.cache.set(f, splitContent(content).fm ?? undefined);
+			this.cache.set(f, props());
 			this.trigger("changed", f, content, {});
 		};
-		if (now) this.cache.set(f, splitContent(content).fm ?? undefined);
+		if (now) this.cache.set(f, props());
 		else setImmediate(apply);
 	}
 	getFileCache(f: TFile) {
@@ -263,6 +286,12 @@ export class FileManager {
 	async renameFile(f: TFile, newPath: string): Promise<void> {
 		await Promise.resolve();
 		this.app.vault.rename(f, newPath);
+	}
+	trashed: string[] = [];
+	async trashFile(f: TFile): Promise<void> {
+		await Promise.resolve();
+		this.trashed.push(f.path);
+		this.app.vault.delete(f);
 	}
 }
 

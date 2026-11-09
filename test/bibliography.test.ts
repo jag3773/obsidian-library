@@ -238,3 +238,39 @@ test("auto-export: a pending export is dropped on unload", async (t) => {
 	await flush();
 	assert.equal(app.vault.adapter.writes.length, 0);
 });
+
+test("entries follow citekey order, not file order", () => {
+	const bib = buildBibliography(
+		[
+			{ path: "References/a.md", frontmatter: { citekey: "zeta", title: "Z" } },
+			{ path: "References/b.md", frontmatter: { citekey: "alpha", title: "A" } },
+		],
+		p
+	);
+	assert.deepEqual(bib.items.map((i) => i.id), ["alpha", "zeta"]);
+});
+
+test("auto-export runs only for changes to reference notes", async (t) => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const app = new App();
+	const plugin = new LibraryPlugin(app as any, { id: "library" } as any);
+	(plugin as any).data = { autoExport: true };
+	await plugin.onload();
+	let runs = 0;
+	const real = plugin.exporter.export.bind(plugin.exporter);
+	plugin.exporter.export = async (...a: Parameters<typeof real>) => {
+		runs++;
+		return real(...a);
+	};
+	const other = app.vault.addFile("Elsewhere/x.md", `---\n{"citekey":"x"}\n---\n`);
+	app.metadataCache.trigger("changed", other);
+	t.mock.timers.tick(6000);
+	await flush();
+	assert.equal(runs, 0);
+	const ref = app.vault.addFile("References/r.md", `---\n{"citekey":"r"}\n---\n`);
+	app.metadataCache.trigger("changed", ref);
+	t.mock.timers.tick(6000);
+	await flush();
+	assert.equal(runs, 1);
+	plugin.unload();
+});

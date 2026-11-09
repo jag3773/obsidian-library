@@ -11,7 +11,9 @@ import { AddReferenceModal } from "./ui/AddReferenceModal";
 import { ReferenceData } from "./metadata/types";
 import { NewReferenceModal } from "./ui/NewReferenceModal";
 import { RefreshModal } from "./ui/RefreshModal";
+import { ImportModal } from "./ui/ImportModal";
 import { ReportModal } from "./ui/ReportModal";
+import { ZoteroImporter } from "./zoteroImport";
 
 const PREFIX = "Library";
 const COMPLETE_DEBOUNCE_MS = 2000;
@@ -26,6 +28,7 @@ export default class LibraryPlugin extends Plugin {
 	library!: Library;
 	inbox!: Inbox;
 	exporter!: BibliographyExporter;
+	importer!: ZoteroImporter;
 	private fetcher!: Fetcher;
 	/** The pending automatic bibliography export, if any. */
 	private exportTimer: number | null = null;
@@ -48,6 +51,8 @@ export default class LibraryPlugin extends Plugin {
 		this.library = new Library(this.app, () => this.settings, () => this.alive);
 		this.inbox = new Inbox(this.app, this.library, this.fetcher, () => this.settings);
 		this.exporter = new BibliographyExporter(this.app, this.library, () => this.settings);
+		const pluginDir = this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`;
+		this.importer = new ZoteroImporter(this.app, this.library, () => this.settings, `${pluginDir}/backups`);
 
 		this.addSettingTab(new LibrarySettingTab(this.app, this));
 		this.addRibbonIcon("library", "Add reference", () => this.openAddReference());
@@ -94,6 +99,16 @@ export default class LibraryPlugin extends Plugin {
 			},
 		});
 
+		this.addCommand({ id: "import-zotero", name: "Import from Zotero (Better BibTeX JSON)", callback: () => this.openImport() });
+		this.addCommand({
+			id: "undo-zotero-import",
+			name: "Undo last Zotero import",
+			checkCallback: (checking) => {
+				if (!this.settings.lastImportBackup) return false;
+				if (!checking) void this.undoImport();
+				return true;
+			},
+		});
 		this.addCommand({ id: "export-bibliography", name: "Export bibliography", callback: () => void this.exportBibliography(true) });
 		this.addCommand({
 			id: "copy-citation",
@@ -448,6 +463,39 @@ export default class LibraryPlugin extends Plugin {
 			this.report(e);
 		} finally {
 			pending.hide();
+		}
+	}
+
+	private openImport(): void {
+		new ImportModal(
+			this.app,
+			this.importer,
+			this.settings.zoteroImport,
+			this.settings.statuses,
+			() => this.saveSettings(),
+			(reportPath, backupPath) => {
+				this.settings.lastImportBackup = backupPath;
+				void this.saveSettings();
+				const report = this.app.vault.getAbstractFileByPath(reportPath);
+				if (report instanceof TFile) void this.app.workspace.getLeaf(false).openFile(report);
+				new Notice(`${PREFIX}: import done. The report is ${reportPath}.`);
+			}
+		).open();
+	}
+
+	/** Reverse the last import from its backup. */
+	async undoImport(): Promise<void> {
+		const path = this.settings.lastImportBackup;
+		if (!path) return;
+		try {
+			const r = await this.importer.undo(path);
+			this.settings.lastImportBackup = "";
+			await this.saveSettings();
+			new Notice(
+				`${PREFIX}: restored ${r.restored} notes, moved ${r.trashed} created notes to the trash.${r.skipped.length ? ` Skipped (changed or missing): ${r.skipped.join(", ")}` : ""}`
+			);
+		} catch (e) {
+			this.report(e);
 		}
 	}
 }
