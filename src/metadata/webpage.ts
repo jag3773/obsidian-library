@@ -4,6 +4,7 @@ import { parseDate, yearOf } from "./dates";
 import { Found, mergeFound } from "./found";
 import { parseHtml, tidy } from "./html";
 import { Fetcher } from "./http";
+import { coinsLayer } from "./coins";
 import { readJsonLd } from "./jsonld";
 import { siteLayer } from "./sites";
 import { ReferenceData, citekeyFamilies } from "./types";
@@ -80,6 +81,7 @@ function metaLayer(doc: Document): Found {
 		publisher: one("citation_publisher", "dc.publisher", "dcterms.publisher"),
 		isbn: [one("citation_isbn"), one("book:isbn"), one("books:isbn")].map((v) => (v ? canonicalIsbn(v) : null)).find(Boolean) ?? undefined,
 		doi: one("citation_doi", "prism.doi", "dc.identifier", "dcterms.identifier")?.replace(/^(doi:\s*|https?:\/\/(dx\.)?doi\.org\/)/i, "").match(/^10\.\S+/)?.[0],
+		pmid: one("citation_pmid")?.match(/^(?:pmid:?\s*)?(\d{1,9})$/i)?.[1],
 		url: httpUrl(one("og:url")),
 		volume: one("citation_volume", "prism.volume"),
 		issue: one("citation_issue", "prism.number"),
@@ -136,12 +138,22 @@ function stripSite(title: string | undefined, site: string | undefined): string 
 	return m && m[2].trim().toLowerCase() === site.toLowerCase() ? m[1] : title;
 }
 
+/** "web page (schema.org, meta tags)": the layers that supplied anything, for messages. */
+function provenance(...layers: [Found, string][]): string {
+	const used = layers.filter(([l]) => Object.values(l).some((v) => v !== undefined && v !== "" && !(Array.isArray(v) && !v.length))).map(([, name]) => name);
+	return used.length ? `web page (${used.join(", ")})` : "web page";
+}
+
 export function parseWebpage(html: string, url: string): ReferenceData {
 	const doc = parseHtml(html);
 	const ld = readJsonLd(doc);
 	const meta = metaLayer(doc);
-	// Most trusted first: what we know about the site, then schema.org, then the tags.
-	const found = mergeFound(siteLayer(doc, url, ld), ld, meta);
+	const site = siteLayer(doc, url, ld);
+	// COinS counts only when the page's one span describes the page itself.
+	const coins = coinsLayer(doc, site.title ?? ld.title ?? meta.title);
+	// Most trusted first: what we know about the site, then schema.org, then COinS, then the
+	// tags (whose journal falls back to the site's name).
+	const found = mergeFound(site, ld, coins, meta);
 	let host = "";
 	try {
 		host = new URL(url).hostname;
@@ -164,6 +176,7 @@ export function parseWebpage(html: string, url: string): ReferenceData {
 		publisher: found.publisher,
 		isbn: found.isbn,
 		doi: found.doi,
+		pmid: found.pmid,
 		// Only trust a page's own URL when it is an absolute http(s) URL; never a javascript: or data: link.
 		url: httpUrl(found.url) ?? url,
 		abstract: found.abstract,
@@ -174,7 +187,7 @@ export function parseWebpage(html: string, url: string): ReferenceData {
 		edition: found.edition,
 		place: found.place,
 		issn: found.issn,
-		source: "web page",
+		source: provenance([site, "site reader"], [ld, "schema.org"], [meta, "meta tags"], [coins, "COinS"]),
 	};
 }
 

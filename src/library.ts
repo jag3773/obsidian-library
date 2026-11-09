@@ -440,6 +440,25 @@ export class Library {
 	 * (a just-created or just-reserved note). Call inside exclusive().
 	 */
 	async attach(note: TFile, attachment: TFile, known: AttachmentNaming = {}): Promise<void> {
+		await this.moveTo(attachment, this.s.attachmentsFolder, this.attachmentBasename(note, known));
+		await this.linkAttachment(note, attachment, true);
+	}
+
+	/**
+	 * Save new bytes as the note's attachment under the configured name, never replacing a
+	 * file (a taken name gets " 1", " 2"), and link it. Call inside exclusive().
+	 */
+	async attachNew(note: TFile, data: ArrayBuffer, ext: string, known: AttachmentNaming = {}): Promise<TFile> {
+		await this.ensureFolder(this.s.attachmentsFolder);
+		const path = this.freePath(this.s.attachmentsFolder, this.attachmentBasename(note, known), ext);
+		this.assertActive();
+		const file = await this.app.vault.createBinary(path, data);
+		await this.linkAttachment(note, file, true);
+		return file;
+	}
+
+	/** The attachment filename format applied to a note. */
+	private attachmentBasename(note: TFile, known: AttachmentNaming): string {
 		const fm = this.frontmatter(note);
 		const fromNote = this.keyInputsFromNote(note);
 		const noteTitle = asText(fm[this.prop("title")]).trim();
@@ -449,8 +468,7 @@ export class Library {
 			familyNames: fromNote.familyNames.length ? fromNote.familyNames : known.familyNames ?? [],
 			year: fromNote.year ?? known.year,
 		};
-		await this.moveTo(attachment, this.s.attachmentsFolder, this.formatName(this.s.attachmentFilenameFormat, citekey, naming));
-		await this.linkAttachment(note, attachment, true);
+		return this.formatName(this.s.attachmentFilenameFormat, citekey, naming);
 	}
 
 	/**

@@ -1,10 +1,11 @@
-import { Identifier } from "../identifiers";
+import { Identifier, pubmedIdFromUrl } from "../identifiers";
 import { lookupArxiv } from "./arxiv";
 import { lookupCrossref, lookupDoiOrg } from "./crossref";
 import { lookupGitHub } from "./github";
 import { lookupGoogleBooks } from "./googlebooks";
 import { Fetcher } from "./http";
 import { lookupOpenLibrary } from "./openlibrary";
+import { lookupPubmed } from "./pubmed";
 import { ReferenceData } from "./types";
 import { lookupWebpage } from "./webpage";
 
@@ -73,6 +74,8 @@ export async function lookup(fetch: Fetcher, id: Identifier, opts: LookupOptions
 			);
 		case "arxiv":
 			return firstOf(() => lookupArxiv(fetch, id.value));
+		case "pmid":
+			return lookupPmid(fetch, id.value, opts);
 		case "url": {
 			const r = await lookupUrl(fetch, id.value, opts);
 			// Web sources change; citations of them carry the date they were read. A work found
@@ -88,13 +91,34 @@ export function today(now = new Date()): string {
 	return `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`;
 }
 
+/**
+ * A PubMed record. PubMed's summary has no abstract and abbreviates given names, so when it
+ * names a DOI the Crossref record leads and PubMed fills its gaps.
+ */
+async function lookupPmid(fetch: Fetcher, pmid: string, opts: LookupOptions): Promise<ReferenceData | null> {
+	const rec = await firstOf(() => lookupPubmed(fetch, pmid));
+	if (!rec?.doi) return rec;
+	const work = await lookup(fetch, { kind: "doi", value: rec.doi }, opts);
+	if (!work) return rec;
+	return { ...fillGaps(work, rec), url: work.url ?? rec.url, pmid, source: `${work.source} and PubMed` };
+}
+
 async function lookupUrl(fetch: Fetcher, url: string, opts: LookupOptions): Promise<ReferenceData | null> {
 	const repo = await firstOf(() => lookupGitHub(fetch, url));
 	if (repo) return repo;
+	// A PubMed record page: the E-utilities record is cleaner than the page, which may be a
+	// cookie check when fetched by a plugin.
+	const pmid = pubmedIdFromUrl(url);
+	if (pmid) return lookupPmid(fetch, pmid, opts);
 	const page = await firstOf(() => lookupWebpage(fetch, url));
 	if (page?.doi) {
 		const work = await lookup(fetch, { kind: "doi", value: page.doi }, opts);
 		if (work) return { ...work, url: work.url ?? page.url };
+	}
+	// A page that names a PubMed ID but no DOI (citation_pmid).
+	if (page?.pmid) {
+		const rec = await lookupPmid(fetch, page.pmid, opts);
+		if (rec) return { ...rec, url: page.url ?? rec.url };
 	}
 	// A book page (a store, Goodreads) often lacks a date, publisher or description that
 	// the ISBN's catalog record has. The page's own values win; the record fills gaps.

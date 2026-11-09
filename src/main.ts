@@ -18,6 +18,8 @@ import { ImportModal } from "./ui/ImportModal";
 import { ReportModal } from "./ui/ReportModal";
 import { ZoteroImporter } from "./zoteroImport";
 import { ConflictModal } from "./ui/ConflictModal";
+import { FindPdfModal } from "./ui/FindPdfModal";
+import { FullText } from "./fulltext";
 import { asText } from "./text";
 import { Citations } from "./citations";
 
@@ -70,7 +72,8 @@ export default class LibraryPlugin extends Plugin {
 		await this.loadSettings();
 		this.fetcher = async (url, headers) => {
 			const res = await requestUrl({ url, headers, throw: false });
-			return { status: res.status, text: res.text };
+			// The text is decoded only when read, so a downloaded PDF isn't decoded as text.
+			return { status: res.status, headers: res.headers, body: res.arrayBuffer, get text() { return res.text; } };
 		};
 		this.library = new Library(this.app, () => this.settings, () => this.alive);
 		this.inbox = new Inbox(this.app, this.library, this.fetcher, () => this.settings);
@@ -125,6 +128,18 @@ export default class LibraryPlugin extends Plugin {
 			},
 		});
 		this.addCommand({ id: "process-inbox", name: "Process inbox now", callback: () => this.processWholeInbox() });
+		// Find PDF (#24): only ever on request.
+		const fullText = new FullText(this.app, this.library, this.fetcher, () => this.settings, (note, search) => FindPdfModal.ask(this.app, note.basename, search));
+		this.addCommand({
+			id: "find-pdf",
+			name: "Find PDF for current reference",
+			checkCallback: (checking) => {
+				const file = this.app.workspace.getActiveFile();
+				if (!file || !this.library.isReference(file)) return false;
+				if (!checking) void this.guard(file, () => fullText.find(file));
+				return true;
+			},
+		});
 		this.addCommand({
 			id: "regenerate-citekey",
 			name: "Regenerate citekey for current note",
@@ -330,7 +345,7 @@ export default class LibraryPlugin extends Plugin {
 	async addByIdentifier(input: string): Promise<void> {
 		const id = detectIdentifier(input);
 		if (!id) {
-			new Notice(`${PREFIX}: "${input}" doesn't look like an ISBN, DOI, arXiv ID or URL.`);
+			new Notice(`${PREFIX}: "${input}" doesn't look like an ISBN, DOI, arXiv ID, PMID or URL.`);
 			return;
 		}
 		const pending = new Notice(`${PREFIX}: looking up ${id.kind.toUpperCase()} ${id.value}…`, 0);

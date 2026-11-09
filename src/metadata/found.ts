@@ -27,6 +27,7 @@ export interface Found {
 	journal?: string;
 	isbn?: string;
 	doi?: string;
+	pmid?: string;
 	url?: string;
 	abstract?: string;
 	/** How each people list's names split, when the layer knows (schema.org givenName/familyName). */

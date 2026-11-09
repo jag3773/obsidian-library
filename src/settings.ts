@@ -329,8 +329,8 @@ export class LibrarySettingTab extends PluginSettingTab {
 
 		new Setting(containerEl).setName("Lookups").setHeading();
 		text(
-			"Crossref contact email",
-			"Optional. Sent to Crossref as mailto for their polite pool. Nothing is sent when empty.",
+			"Contact email",
+			"Optional. Sent to Crossref as mailto for their polite pool, and to Unpaywall when you run find PDF (Unpaywall requires it). Nothing is sent when empty.",
 			() => s.crossrefMailto,
 			(v) => (s.crossrefMailto = v)
 		);

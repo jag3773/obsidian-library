@@ -36,6 +36,8 @@ export interface ReferenceData {
 	doi?: string;
 	url?: string;
 	abstract?: string;
+	/** PubMed ID, when a page or record names one. Used for lookups; not written to the note. */
+	pmid?: string;
 	/** Where the data came from, for messages. */
 	source: string;
 }

@@ -1,9 +1,10 @@
 import { App, Notice, TFile, getFrontMatterInfo, parseYaml } from "obsidian";
 import { familyFromFullName } from "./citekey";
-import { findIdentifierInText } from "./identifiers";
+import { findIdentifierInText, normalizeDoi } from "./identifiers";
 import { Library } from "./library";
 import { Fetcher } from "./metadata/http";
 import { parseDate, yearOf } from "./metadata/dates";
+import { truncated } from "./metadata/found";
 import { lookup } from "./metadata/lookup";
 import { ReferenceData } from "./metadata/types";
 import { readPdf } from "./pdf";
@@ -48,7 +49,14 @@ export class Inbox {
 			new Notice(`Stacks: no URL found in ${file.name}; left in the inbox.`);
 			return null;
 		}
-		const data = await lookup(this.fetch, { kind: "url", value: url }, { crossrefMailto: s.crossrefMailto });
+		let data = await lookup(this.fetch, { kind: "url", value: url }, { crossrefMailto: s.crossrefMailto });
+		// A DOI the clipper read from the page (citation_doi) finds the work even when the
+		// site turns the plugin's own request away.
+		const clipDoi = normalizeDoi(str(fm[s.propertyNames.doi] ?? fm.doi));
+		if (clipDoi && !data?.doi) {
+			const work = await lookup(this.fetch, { kind: "doi", value: clipDoi }, { crossrefMailto: s.crossrefMailto });
+			if (work) data = { ...work, url: work.url ?? url };
+		}
 		// Effective metadata: the lookup result with the clip's URL kept. What the clipper saved
 		// (read in the browser, so it works on sites that block the plugin's request) fills any
 		// gaps, or stands in when the lookup failed. The URL ends up in the configured url
@@ -150,8 +158,11 @@ export function fromClip(fm: Record<string, unknown>, props: Record<PropertyKey,
 	};
 }
 
-/** found, with empty authors, date and abstract taken from the clip. */
-function fillFromClip(found: ReferenceData, clip: ReferenceData): ReferenceData {
+/**
+ * found, with empty authors, date and abstract taken from the clip. A looked-up abstract that
+ * was cut short ("…") gives way to a longer description the clipper saved.
+ */
+export function fillFromClip(found: ReferenceData, clip: ReferenceData): ReferenceData {
 	const out = { ...found };
 	// A page without a title comes back titled with its URL; the clip's title is better.
 	if (/^https?:\/\//i.test(out.title) && clip.title) out.title = clip.title;
@@ -163,6 +174,8 @@ function fillFromClip(found: ReferenceData, clip: ReferenceData): ReferenceData 
 		out.date = clip.date;
 		out.year ??= clip.year;
 	}
+	if (out.abstract && clip.abstract && truncated(out.abstract) && !truncated(clip.abstract) && clip.abstract.length > out.abstract.length)
+		out.abstract = clip.abstract;
 	out.abstract ??= clip.abstract;
 	return out;
 }
