@@ -3,7 +3,8 @@ import { disambiguate, generateCitekey } from "./citekey";
 import { Identifier, canonicalIsbn, normalizeDoi, normalizeIsbn } from "./identifiers";
 import { ReferenceData } from "./metadata/types";
 import { familyOf, nameValue, namesFromProperty, parseName } from "./names";
-import { PEOPLE_KEYS, PeopleKey, TEXT_KEYS } from "./properties";
+import { FieldChange, compareProperties } from "./manual";
+import { FIELD_LABELS, PEOPLE_KEYS, PeopleKey, TEXT_KEYS } from "./properties";
 import { LibrarySettings, PropertyKey } from "./settings";
 import { DEFAULT_TEMPLATE, escapeMarkdown, markdownSafeUrl, renderTemplate, safeFilename } from "./template";
 
@@ -79,6 +80,12 @@ function sameValue(a: unknown, b: unknown): boolean {
 }
 
 /** Bibliographic fields a lookup knows better than a clipper's guess from the page. */
+/** Fields a refresh may update: everything bibliographic, nothing about your workflow. */
+const REFRESH_FIELDS: PropertyKey[] = [
+	"type", "title", "authors", "editors", "translators", "contributors", "year", "published", "publisher", "place",
+	"journal", "volume", "issue", "pages", "edition", "series", "isbn", "issn", "doi", "url", "accessed", "language", "abstract",
+];
+
 const CLIPPED_FIELDS: PropertyKey[] = [
 	"type", "title", "authors", "editors", "translators", "contributors", "year", "published", "publisher", "place",
 	"journal", "volume", "issue", "pages", "edition", "series", "isbn", "issn", "doi", "language", "abstract",
@@ -384,13 +391,8 @@ export class Library {
 	async complete(file: TFile, data: ReferenceData | null, status?: string, captureUrls: string[] = [], clipped?: Frontmatter): Promise<TFile> {
 		const fm = this.frontmatter(file);
 		const existingKey = String(fm[this.prop("citekey")] ?? "").trim();
-		const basis: ReferenceData = data ?? {
-			type: "webpage",
-			title: String(fm[this.prop("title")] ?? file.basename),
-			authors: [],
-			familyNames: [],
-			source: "note",
-		};
+		// Without looked-up data, the note's own properties name it (a manual reference, #16).
+		const basis: ReferenceData = data ?? { ...this.keyInputsFromNote(file), type: "", authors: [], source: "note" };
 		const citekey = existingKey || this.makeCitekey(basis, file);
 		this.reserve(file, citekey, basis, captureUrls);
 		const replace: Frontmatter = {};
@@ -399,6 +401,25 @@ export class Library {
 		// Notes already inside the references folder keep their subfolder.
 		const folder = this.isReference(file) ? file.parent?.path ?? this.s.referencesFolder : this.s.referencesFolder;
 		return this.moveTo(file, folder, this.formatName(this.s.filenameFormat, citekey, basis));
+	}
+
+	/**
+	 * What a fresh lookup would change on a note, field by field. Never includes the citekey,
+	 * status, files or date added.
+	 */
+	refreshChanges(file: TFile, data: ReferenceData): FieldChange[] {
+		const proposed = this.propertiesFor(data, this.citekeyOf(file) || file.basename);
+		const fields = REFRESH_FIELDS.map((k) => [this.prop(k), FIELD_LABELS[k]] as [string, string]);
+		return compareProperties(this.frontmatter(file), proposed, fields);
+	}
+
+	/** Write the chosen changes from refreshChanges; the note body is untouched. */
+	async applyChanges(file: TFile, changes: FieldChange[]): Promise<void> {
+		if (!changes.length) return;
+		this.assertActive();
+		await this.app.fileManager.processFrontMatter(file, (fm: Frontmatter) => {
+			for (const c of changes) fm[c.property] = c.proposed;
+		});
 	}
 
 	/** A link from note to target that resolves to target even when its basename isn't unique. */

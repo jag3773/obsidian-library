@@ -8,6 +8,9 @@ import { Fetcher } from "./metadata/http";
 import { lookup } from "./metadata/lookup";
 import { LibrarySettingTab, LibrarySettings, withDefaults } from "./settings";
 import { AddReferenceModal } from "./ui/AddReferenceModal";
+import { ReferenceData } from "./metadata/types";
+import { NewReferenceModal } from "./ui/NewReferenceModal";
+import { RefreshModal } from "./ui/RefreshModal";
 import { ReportModal } from "./ui/ReportModal";
 
 const PREFIX = "Library";
@@ -51,8 +54,23 @@ export default class LibraryPlugin extends Plugin {
 
 		this.addCommand({ id: "add-reference", name: "Add reference", callback: () => this.openAddReference() });
 		this.addCommand({
+			id: "new-reference",
+			name: "New reference without a lookup",
+			callback: () => new NewReferenceModal(this.app, (data) => void this.createManualReference(data)).open(),
+		});
+		this.addCommand({
+			id: "refresh-metadata",
+			name: "Refresh metadata from ISBN, DOI or URL",
+			checkCallback: (checking) => {
+				const file = this.app.workspace.getActiveFile();
+				if (!file || !this.library.isReference(file) || !this.library.identifierOf(file)) return false;
+				if (!checking) void this.refreshMetadata(file);
+				return true;
+			},
+		});
+		this.addCommand({
 			id: "complete-current-reference",
-			name: "Complete current reference from its ISBN, DOI or URL",
+			name: "Complete current reference",
 			checkCallback: (checking) => {
 				const file = this.app.workspace.getActiveFile();
 				if (!file || file.extension !== "md") return false;
@@ -296,7 +314,8 @@ export default class LibraryPlugin extends Plugin {
 	async completeFromProperties(file: TFile, explicit: boolean, scheduled?: Identifier): Promise<void> {
 		const id = this.library.identifierOf(file);
 		if (!id) {
-			if (explicit) new Notice(`${PREFIX}: add an ISBN, DOI or URL property first.`);
+			// No identifier: name it from its own properties, with no network request (#16).
+			if (explicit) await this.completeLocally(file);
 			return;
 		}
 		if (!explicit && !this.autoEligible(file, scheduled ?? id)) return;
@@ -365,5 +384,70 @@ export default class LibraryPlugin extends Plugin {
 		}
 		await navigator.clipboard.writeText(render(bib.items, this.settings.exportFormat));
 		new Notice(`${PREFIX}: copied ${bib.items.length} ${bib.items.length === 1 ? "entry" : "entries"} (${FORMAT_LABELS[this.settings.exportFormat]}).`);
+	}
+
+	/** Create a manual reference (no lookup), unless its identifier is already in the library. */
+	async createManualReference(data: ReferenceData): Promise<TFile | undefined> {
+		try {
+			const { file, existing } = await this.library.exclusive(async () => {
+				const found = this.library.findExisting(data);
+				if (found) return { file: found, existing: true };
+				const created = await this.library.create(data, this.settings.defaultStatus);
+				this.settle(created.path);
+				return { file: created, existing: false };
+			});
+			await this.app.workspace.getLeaf(false).openFile(file);
+			new Notice(existing ? `${PREFIX}: already in your library as ${file.basename}.` : `${PREFIX}: created ${file.basename}.`);
+			return file;
+		} catch (e) {
+			this.report(e);
+			return undefined;
+		}
+	}
+
+	/** Give a note without an identifier a citekey and its filename from its own properties. */
+	private async completeLocally(file: TFile): Promise<void> {
+		if (!this.library.isReference(file)) {
+			new Notice(`${PREFIX}: move the note into ${this.settings.referencesFolder} first, or add an ISBN, DOI or URL.`);
+			return;
+		}
+		const title = String(this.library.frontmatter(file)[this.library.prop("title")] ?? "").trim();
+		if (!title) {
+			new Notice(`${PREFIX}: add a title (and ideally authors and a year) first.`);
+			return;
+		}
+		await this.guard(file, async () => {
+			const moved = await this.library.exclusive(() => this.library.complete(file, null, this.settings.defaultStatus));
+			new Notice(`${PREFIX}: ${moved.basename} is ready, without a lookup.`);
+		});
+	}
+
+	/** Look the note's identifier up again and offer each changed field for review. */
+	async refreshMetadata(file: TFile): Promise<void> {
+		const id = this.library.identifierOf(file);
+		if (!id) return;
+		const pending = new Notice(`${PREFIX}: looking up ${id.value}…`, 0);
+		try {
+			const data = await lookup(this.fetcher, id, { crossrefMailto: this.settings.crossrefMailto });
+			if (!data) {
+				new Notice(`${PREFIX}: nothing found for ${id.value}.`);
+				return;
+			}
+			const changes = this.library.refreshChanges(file, data);
+			if (!changes.length) {
+				new Notice(`${PREFIX}: ${file.basename} already matches ${data.source}.`);
+				return;
+			}
+			new RefreshModal(this.app, file.basename, data.source, changes, (chosen) =>
+				void this.guard(file, async () => {
+					await this.library.exclusive(() => this.library.applyChanges(file, chosen));
+					if (chosen.length) new Notice(`${PREFIX}: updated ${chosen.length} ${chosen.length === 1 ? "field" : "fields"} on ${file.basename}.`);
+				})
+			).open();
+		} catch (e) {
+			this.report(e);
+		} finally {
+			pending.hide();
+		}
 	}
 }
