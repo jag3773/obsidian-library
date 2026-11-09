@@ -215,7 +215,7 @@ The plugin sends identifiers (ISBN, DOI, arXiv ID, PMID, URL) to the public serv
 
 - MIT license, `LICENSE` in the repo root.
 - Build with esbuild, as in the Obsidian sample plugin. Release assets: `main.js`, `manifest.json`, `styles.css`.
-- Beta distribution through BRAT from a GitHub repo, then submission to the community directory after stage 2.
+- Distributed through Obsidian's community plugin directory; a plain version tag publishes a full release, a hyphenated tag a pre-release.
 - Plugin id `stacks` (display name Stacks). The earlier `library` id clashed with an existing community plugin.
 
 ## 9. Open questions

@@ -56,7 +56,8 @@ test("findLinks reads Markdown destinations with parentheses, angle brackets and
 		'[angle](<My note (draft).md> "Title")',
 		"[t](plain.md 'Title')",
 		"[p](nested.md (Title))",
-		"[unencoded space, not a link](Smith (2020).md)",
+		"[space](Smith (2020).md)",
+		'[space title](my note.md "Title")',
 	].join(" ");
 	const links = findLinks(text);
 	assert.deepEqual(
@@ -67,8 +68,12 @@ test("findLinks reads Markdown destinations with parentheses, angle brackets and
 			["My note (draft).md", '[angle](<My note (draft).md> "Title")'],
 			["plain.md", "[t](plain.md 'Title')"],
 			["nested.md", "[p](nested.md (Title))"],
+			// Plain spaces aren't CommonMark, but merging must still find these links.
+			["Smith (2020).md", "[space](Smith (2020).md)"],
+			["my note.md", '[space title](my note.md "Title")'],
 		]
 	);
+	assert.equal(retarget(links[5], "new note"), "[space](new%20note.md)");
 	assert.equal(retarget(links[0], "References/Jones (2020)"), "[Smith](References/Jones%20%282020%29.md)");
 });
 

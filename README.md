@@ -8,9 +8,9 @@ The paper you saved. The passage that changed your mind. The note that became a 
 
 If Obsidian is where you think, it should be enough to manage the sources behind that thinking, too. That is the ambition: one app for your library and the knowledge you make from it.
 
-[Get started](#install-beta) · [Available today](#available-today) · [The road ahead](#the-road-ahead)
+[Get started](#install) · [Available today](#available-today) · [Try it and tell us](#try-it-and-tell-us) · [The road ahead](#the-road-ahead)
 
-> **Early beta · 0.3.x.** Capture, metadata lookup, manual references, citekeys, PDF filing, library views, annotation extraction, a tablet reading round trip, Zotero import, and bibliography export are available now. Stacks is still growing toward a complete reference manager. Formatted citations and inserting citations while you write are new.
+> **Early release.** Stacks is in Obsidian's community plugin directory. Capture, metadata lookup, citekeys, PDF filing, library views, annotation extraction, imports, bibliography export, formatted citations, and library maintenance are all available. It is young software, tested on its author's own vault so far, so keep a backup of your vault and [tell us](#try-it-and-tell-us) what you find.
 
 ## Let your reading become part of your thinking
 
@@ -53,38 +53,26 @@ No separate library database to maintain. The notes and files in your vault are 
 
 ## The road ahead
 
-The destination is the whole journey: **collect → read → understand → write → cite**.
+The destination is the whole journey: **collect → read → understand → write → cite**. Most of that path now exists in a first form. What comes next is making it dependable for more people and more kinds of libraries:
 
-The next pieces include importing other bibliography files and citing sources while you write. Search, duplicate merging, attachment maintenance, and dependable work across devices matter just as much as the first capture.
+- **Many devices.** Stacks is built to work with whatever sync you already use, but it has not yet been tested on phones, tablets, or sync services beyond one setup. See [mobile and offline reliability](https://github.com/jag3773/obsidian-stacks/issues/30).
+- **Rougher edges of real libraries.** Probable duplicates (not just exact ones), several references in one pass of the citation picker, and capturing many results from a search page at once.
+- **Your workflows.** What still sends you back to another reference manager decides what Stacks builds next.
 
-| The next step | Proposals to explore |
-| --- | --- |
-| Bring your library with you | [Bibliography imports](https://github.com/jag3773/obsidian-stacks/issues/17) |
-| Capture more of what you find | [Scholarly web capture](https://github.com/jag3773/obsidian-stacks/issues/23), [full-text retrieval](https://github.com/jag3773/obsidian-stacks/issues/24) |
-| Return to what mattered | [Highlights into notes](https://github.com/jag3773/obsidian-stacks/issues/22), [full-text search](https://github.com/jag3773/obsidian-stacks/issues/25) |
-| Write with your sources | [Citation styles](https://github.com/jag3773/obsidian-stacks/issues/20), [citations while drafting](https://github.com/jag3773/obsidian-stacks/issues/21) |
-| Trust a growing collection | [Duplicate merging](https://github.com/jag3773/obsidian-stacks/issues/26), [library health checks](https://github.com/jag3773/obsidian-stacks/issues/28) |
-| Keep reading across devices | [Mobile and offline reliability](https://github.com/jag3773/obsidian-stacks/issues/30), [external-reader round trip](https://github.com/jag3773/obsidian-stacks/issues/29) |
+The [feature backlog](https://github.com/jag3773/obsidian-stacks/issues?q=is%3Aissue%20is%3Aopen%20label%3Aenhancement) tracks proposals; it is a list to prioritize, not a promise. [PLAN.md](PLAN.md) describes the design choices.
 
-The [feature backlog](https://github.com/jag3773/obsidian-stacks/issues?q=is%3Aissue%20is%3Aopen%20label%3Aenhancement) tracks those gaps. It is a set of proposals to prioritize, not a promise that every feature will ship. [PLAN.md](PLAN.md) describes the implementation stages and design choices.
+Obsidian already provides the workspace. Stacks builds on Web Clipper, Bases, the PDF viewer, and compatible plugins rather than recreating them. The aim is a coherent research workflow with your vault at its center.
 
-Obsidian already provides the workspace. Stacks can build on Web Clipper, Bases, the PDF viewer, and compatible plugins rather than recreating them. The aim is a coherent research workflow with your vault at its center.
-
-## Install (beta)
+## Install
 
 Use a recent Obsidian version with **Bases** enabled for the library views.
 
-### With BRAT
-
-1. Install and enable [BRAT](https://github.com/TfTHacker/obsidian42-brat).
-2. Choose **Add beta plugin** and enter `jag3773/obsidian-stacks`.
-3. Enable **Stacks** in Community plugins.
-
-Builds are available on the [releases page](https://github.com/jag3773/obsidian-stacks/releases).
+1. In Obsidian, open **Settings → Community plugins** and choose **Browse**.
+2. Search for **Stacks**, then install and enable it.
 
 ### Manual installation
 
-Download `main.js`, `manifest.json`, and `styles.css` from the same release. Put them in `<vault>/.obsidian/plugins/stacks/`, then enable **Stacks**.
+Download `main.js`, `manifest.json`, and `styles.css` from the latest [release](https://github.com/jag3773/obsidian-stacks/releases). Put them in `<vault>/.obsidian/plugins/stacks/`, then enable **Stacks** in Community plugins.
 
 **Upgrading from 0.2.x?** The plugin was renamed from Library to Stacks in 0.3.0, and its ID changed from `library` to `stacks`. Disable the old plugin and keep a backup of its folder. To retain your settings, copy `.obsidian/plugins/library/data.json` into the new `stacks` folder before enabling Stacks, then remove the old folder.
 
@@ -126,6 +114,16 @@ views:
 
 </details>
 
+## Try it and tell us
+
+Stacks has been tested on one vault: its author's. Your library is different, and that is exactly why your experience helps. If you try it:
+
+- **Something broke or surprised you?** [Open an issue](https://github.com/jag3773/obsidian-stacks/issues/new) with what you did, what you expected, and your Obsidian version and platform.
+- **It worked?** That is useful too, especially on a phone or tablet, with a sync service, or with a large library or an import from another tool. A short note in an issue is welcome.
+- **Want to fix or add something?** Pull requests are welcome. See [build and contribute](#build-and-contribute) below.
+
+Please keep a backup of your vault while you try it. Stacks previews its bigger changes before making them, but a backup is the best safety net for any new tool.
+
 ## Metadata and privacy
 
 Stacks uses Open Library and Google Books for ISBNs, Crossref and doi.org for DOIs, arXiv for arXiv IDs, NCBI E-utilities (PubMed) for PMIDs and PubMed links, GitHub's public API for repositories, and a web page's own metadata for other URLs. No API keys are required. **Find PDF**, only when you run it, asks Unpaywall (with your contact email) and the work's landing page for an open-access PDF.
@@ -159,17 +157,17 @@ npm test         # pure-module and vault/settings tests
 npm run bbt-accuracy -- path/to/BetterBibTeX.json 2025
 ```
 
-Tests use an in-memory Obsidian stand-in for vault and settings behavior. Real-vault testing is valuable, especially for reading workflows, mobile use, and library views.
+Tests use an in-memory Obsidian stand-in for vault and settings behavior, so testing in a real vault is the most valuable help, especially for reading workflows, mobile use, and library views.
 
 Have a workflow that still sends you back to a separate reference manager? [Describe it in an issue](https://github.com/jag3773/obsidian-stacks/issues/new). Concrete examples help shape what Stacks builds next.
 
 <details>
 <summary>Publishing a release</summary>
 
-Set the same new version in `manifest.json` and `package.json`, add it to `versions.json`, and commit. Push a matching, unused version tag. The Release workflow runs tests, builds, and publishes a pre-release containing `main.js`, `manifest.json`, and `styles.css` for BRAT and manual installation.
+Set the same new version in `manifest.json` and `package.json`, add it to `versions.json`, and commit. Push a matching, unused version tag. The Release workflow runs tests, builds, and publishes a release containing `main.js`, `manifest.json`, and `styles.css`, which Obsidian's community plugin directory picks up. A tag with a hyphen (`0.4.0-beta.1`) is published as a pre-release instead.
 
 </details>
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE). Bundled third-party components (the citation processor, citation style, and locale) keep their own licences; see [NOTICE.md](NOTICE.md).

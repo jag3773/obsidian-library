@@ -74,6 +74,27 @@ function parseDestination(text: string, from: number): { dest: string; end: numb
 	return text[i] === ")" ? { dest, end: i + 1 } : null;
 }
 
+/**
+ * Fallback for a destination CommonMark rejects because it has plain spaces, such as
+ * `[x](my note.md)`: up to the ")" that balances, on one line. Merging must still find these,
+ * or such a link would be left pointing at a note that goes to the trash. A trailing quoted
+ * title is dropped.
+ */
+function parseLenientDestination(text: string, from: number): { dest: string; end: number } | null {
+	let depth = 0;
+	for (let i = from; i < text.length && text[i] !== "\n"; i++) {
+		if (text[i] === "(") depth++;
+		else if (text[i] === ")" && depth-- === 0) {
+			const dest = text
+				.slice(from, i)
+				.replace(/\s+(?:"[^"]*"|'[^']*')\s*$/, "")
+				.trim();
+			return dest ? { dest, end: i + 1 } : null;
+		}
+	}
+	return null;
+}
+
 /** Replace the contents of fenced code blocks and inline code with spaces, keeping offsets. */
 function maskCode(text: string): string {
 	const blank = (s: string) => s.replace(/[^\n]/g, " ");
@@ -111,7 +132,7 @@ export function findLinks(text: string): FoundLink[] {
 		const start = m.index ?? 0;
 		// Inside a wikilink's alias ("[[a|[b](c)]]") or an earlier link's title is not a link of its own.
 		if (start < lastEnd || out.some((w) => start >= w.start && start < w.end)) continue;
-		const parsed = parseDestination(masked, start + m[0].length);
+		const parsed = parseDestination(masked, start + m[0].length) ?? parseLenientDestination(masked, start + m[0].length);
 		if (!parsed) continue;
 		lastEnd = parsed.end;
 		const original = text.slice(start, parsed.end);
