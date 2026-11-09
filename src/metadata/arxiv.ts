@@ -1,5 +1,6 @@
 import { familyFromFullName } from "../citekey";
 import { Fetcher } from "./http";
+import { parseDate } from "./dates";
 import { ReferenceData, stripTags, yearFrom } from "./types";
 
 function rawTag(xml: string, name: string): string | undefined {
@@ -23,6 +24,7 @@ export function parseArxiv(xml: string, id: string): ReferenceData | null {
 		title,
 		authors,
 		familyNames: authors.map(familyFromFullName),
+		date: parseDate(tag(entry, "published")),
 		year: yearFrom(tag(entry, "published")),
 		journal: tag(entry, "arxiv:journal_ref") ?? "arXiv",
 		abstract: tag(entry, "summary"),

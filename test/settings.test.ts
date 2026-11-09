@@ -70,7 +70,7 @@ test("choosing a base sets the folder and matches fields to its and its notes' p
 	assert.equal(s.libraryBase, "Bases/Books.base");
 	assert.equal(s.referencesFolder, "Reading/Books");
 	assert.equal(s.propertyNames.authors, "author");
-	assert.equal(s.propertyNames.year, "date");
+	assert.equal(s.propertyNames.published, "date");
 	assert.equal(s.propertyNames.citekey, "Citation Key");
 	assert.equal(s.propertyNames.doi, "DOI");
 	assert.equal(s.propertyNames.url, "source");

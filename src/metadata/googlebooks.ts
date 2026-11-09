@@ -1,5 +1,6 @@
 import { familyFromFullName } from "../citekey";
 import { Fetcher, getJson } from "./http";
+import { parseDate, yearOf } from "./dates";
 import { ReferenceData, joinTitle, stripTags, yearFrom } from "./types";
 
 interface GBResponse {
@@ -24,7 +25,8 @@ export function parseGoogleBooks(json: GBResponse | null, isbn: string): Referen
 		title: joinTitle(v.title, v.subtitle),
 		authors,
 		familyNames: authors.map(familyFromFullName),
-		year: yearFrom(v.publishedDate),
+		date: parseDate(v.publishedDate),
+		year: yearOf(parseDate(v.publishedDate)) ?? yearFrom(v.publishedDate),
 		publisher: v.publisher,
 		abstract: stripTags(v.description),
 		isbn,

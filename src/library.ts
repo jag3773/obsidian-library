@@ -78,6 +78,9 @@ export interface AttachmentNaming {
  * regenerateCitekey) must run inside exclusive(), together with any duplicate check
  * they depend on, so that concurrent captures can't pick the same key or file.
  */
+/** Bibliographic fields a lookup knows better than a clipper's guess from the page. */
+const CLIPPED_FIELDS: PropertyKey[] = ["type", "title", "authors", "year", "published", "publisher", "journal", "isbn", "doi", "abstract"];
+
 export class Library {
 	private queue: Promise<unknown> = Promise.resolve();
 	private reservations: Reservation[] = [];
@@ -239,18 +242,24 @@ export class Library {
 			[p("isbn")]: data.isbn,
 			[p("doi")]: data.doi,
 			[p("url")]: data.url,
+			[p("abstract")]: data.abstract,
 			[p("status")]: status,
 			[p("added")]: moment().format("YYYY-MM-DD"),
 		};
+		// Older settings may map the year to a date property; the full date wins there.
+		if (data.date) out[p("published")] = data.date;
 		for (const k of Object.keys(out)) if (isEmpty(out[k])) delete out[k];
 		return out;
 	}
 
-	/** Fill empty properties only. Never overwrites a value the user set. */
-	async fillProperties(file: TFile, props: Frontmatter): Promise<void> {
+	/**
+	 * Fill empty properties. Properties named in `replace` are overwritten too; that is only
+	 * used for values a clipper wrote moments ago, never for values the user set.
+	 */
+	async fillProperties(file: TFile, props: Frontmatter, replace: ReadonlySet<string> = new Set()): Promise<void> {
 		this.assertActive();
 		await this.app.fileManager.processFrontMatter(file, (fm: Frontmatter) => {
-			for (const [k, v] of Object.entries(props)) if (isEmpty(fm[k])) fm[k] = v;
+			for (const [k, v] of Object.entries(props)) if (isEmpty(fm[k]) || replace.has(k)) fm[k] = v;
 		});
 	}
 
@@ -267,6 +276,7 @@ export class Library {
 			title: e(data.title),
 			authors: data.authors.map(escapeMarkdown),
 			year: data.year,
+			published: e(data.date),
 			publisher: e(data.publisher),
 			journal: e(data.journal),
 			url: markdownSafeUrl(data.url),
@@ -330,9 +340,11 @@ export class Library {
 	 * and move it into the references folder under the configured filename.
 	 * `captureUrls` are other URLs the note was captured from, counted for duplicate
 	 * detection until the cache indexes the note (afterwards its url properties are read).
+	 * `replaceClipped` lets looked-up bibliographic values replace the ones a clipper just
+	 * wrote (its page title, a truncated description); the URL and status are kept.
 	 * Call inside exclusive().
 	 */
-	async complete(file: TFile, data: ReferenceData | null, status?: string, captureUrls: string[] = []): Promise<TFile> {
+	async complete(file: TFile, data: ReferenceData | null, status?: string, captureUrls: string[] = [], replaceClipped = false): Promise<TFile> {
 		const fm = this.frontmatter(file);
 		const existingKey = String(fm[this.prop("citekey")] ?? "").trim();
 		const basis: ReferenceData = data ?? {
@@ -344,7 +356,8 @@ export class Library {
 		};
 		const citekey = existingKey || this.makeCitekey(basis, file);
 		this.reserve(file, citekey, basis, captureUrls);
-		await this.fillProperties(file, this.propertiesFor(basis, citekey, isEmpty(fm[this.prop("status")]) ? status : undefined));
+		const replace = new Set(replaceClipped ? CLIPPED_FIELDS.map((k) => this.prop(k)) : []);
+		await this.fillProperties(file, this.propertiesFor(basis, citekey, isEmpty(fm[this.prop("status")]) ? status : undefined), replace);
 		// Notes already inside the references folder keep their subfolder.
 		const folder = this.isReference(file) ? file.parent?.path ?? this.s.referencesFolder : this.s.referencesFolder;
 		return this.moveTo(file, folder, this.formatName(this.s.filenameFormat, citekey, basis));

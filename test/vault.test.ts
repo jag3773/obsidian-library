@@ -1,9 +1,10 @@
 // Vault-level tests against the in-memory Obsidian stand-in in test/mocks/obsidian.ts.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 // "obsidian" is aliased to the mock by esbuild.test.mjs.
 import { App, Notice, TFile, http, pdf } from "obsidian";
-import { Inbox } from "../src/inbox";
+import { Inbox, fromClip } from "../src/inbox";
 import { Library } from "../src/library";
 import LibraryPlugin from "../src/main";
 import { ReferenceData } from "../src/metadata/types";
@@ -442,4 +443,145 @@ test("#10 the original capture URL also matches before the cache indexes the not
 		return library.findExisting({ url: "https://example.com/original" });
 	});
 	assert.equal(found, clip);
+});
+
+// Rich web metadata ------------------------------------------------------------------------
+
+const webFixture = (name: string) => readFileSync(`test/fixtures/web/${name}`, "utf8");
+
+test("a Goodreads clip is filed with author, publication date, abstract and ISBN", async () => {
+	const { app, inbox } = setup();
+	const url = "https://www.goodreads.com/book/show/54493401-project-hail-mary";
+	const clip = app.vault.addFile("Inbox/clip.md", `---\n${JSON.stringify({ source: url, title: "Project Hail Mary by Andy Weir | Goodreads" })}\n---\nclipped text\n`);
+	http.handler = async (p) => (p.url === url ? { status: 200, text: webFixture("goodreads-book.html") } : { status: 404, text: "" });
+	assert.ok(await inbox.process(clip));
+	await flush();
+	const props = fm(app, clip);
+	assert.equal(props.title, "Project Hail Mary", "the looked-up title replaces the clipper's page title");
+	assert.equal(props.source, url, "the clip's URL property is kept");
+	assert.deepEqual(props.authors, ["[[Andy Weir]]"]);
+	assert.equal(props.published, "2021-05-04");
+	assert.equal(props.year, 2021);
+	assert.match(props.abstract, /^Ryland Grace is the sole survivor/);
+	assert.equal(props.isbn, "9780593135204");
+	assert.equal(props.type, "book");
+	assert.match(String(props.citekey), /^weir.*2021$/i);
+});
+
+test("a site that blocks the plugin falls back on what Web Clipper saved", async () => {
+	const { app, inbox } = setup();
+	const url = "https://www.kobo.com/us/en/ebook/project-hail-mary";
+	const clip = app.vault.addFile(
+		"Inbox/kobo.md",
+		`---\n${JSON.stringify({
+			title: "Project Hail Mary",
+			source: url,
+			author: ["[[Andy Weir]]"],
+			published: "2021-05-04",
+			description: "A lone astronaut must save the earth from disaster.",
+		})}\n---\n`
+	);
+	// Kobo answers automated requests with a bot check.
+	http.handler = async () => ({ status: 403, text: "<html><head><title>Challenged | Kobo.com</title></head></html>" });
+	assert.ok(await inbox.process(clip));
+	await flush();
+	const props = fm(app, clip);
+	assert.deepEqual(props.authors, ["[[Andy Weir]]"]);
+	assert.equal(props.published, "2021-05-04");
+	assert.equal(props.abstract, "A lone astronaut must save the earth from disaster.");
+	assert.match(String(props.citekey), /^weir.*2021$/i);
+	assert.ok(clip.path.startsWith("References/"));
+});
+
+test("a bot check served with status 200 isn't mistaken for the page", async () => {
+	const { app, inbox } = setup();
+	const clip = app.vault.addFile("Inbox/c.md", `---\n{"source":"https://shop.example/item","title":"Real Title"}\n---\n`);
+	http.handler = async () => ({ status: 200, text: `<html><head><title>Just a moment...</title><meta name="description" content="Checking your browser"></head></html>` });
+	assert.ok(await inbox.process(clip));
+	await flush();
+	assert.equal(fm(app, clip).title, "Real Title");
+	assert.equal(fm(app, clip).abstract, undefined);
+});
+
+test("a GitHub clip gets the repository's name, owner, creation date and description", async () => {
+	const { app, inbox } = setup();
+	const url = "https://github.com/jag3773/obsidian-library";
+	// What Web Clipper's default template saves for this page.
+	const clip = app.vault.addFile(
+		"Inbox/GitHub - jag3773_obsidian-library.md",
+		`---\n${JSON.stringify({
+			title: "GitHub - jag3773/obsidian-library: A full featured library plugin for Obsidian",
+			source: url,
+			author: null,
+			published: null,
+			description: "A full featured library plugin for Obsidian. Contribute to jag3773/obsidian-library development by creating an account on GitHub.",
+		})}\n---\n`
+	);
+	http.handler = async (p) =>
+		p.url === "https://api.github.com/repos/jag3773/obsidian-library"
+			? { status: 200, text: webFixture("github-repo.json") }
+			: p.url === "https://api.github.com/users/jag3773"
+				? { status: 200, text: webFixture("github-user.json") }
+				: { status: 404, text: "" };
+	assert.ok(await inbox.process(clip));
+	await flush();
+	const props = fm(app, clip);
+	assert.equal(props.title, "obsidian-library");
+	assert.deepEqual(props.authors, ["[[Jesse Griffin]]"]);
+	assert.equal(props.published, "2026-11-08");
+	assert.equal(props.abstract, "A full featured library plugin for Obsidian");
+	assert.equal(props.type, "software");
+	assert.equal(props.journal, "GitHub");
+	assert.equal(props.status, "shelved");
+});
+
+test("values the user set on a note are never replaced when completing it by hand", async () => {
+	const { app, library } = setup();
+	const note = app.vault.addFile("References/n.md", `---\n{"title":"Mine","abstract":"My summary"}\n---\n`);
+	await flush();
+	const data: ReferenceData = { type: "book", title: "Theirs", authors: ["A B"], familyNames: ["B"], abstract: "Theirs", source: "test" };
+	await library.exclusive(() => library.complete(note, data));
+	await flush();
+	assert.equal(fm(app, note).title, "Mine");
+	assert.equal(fm(app, note).abstract, "My summary");
+	assert.deepEqual(fm(app, note).authors, ["[[A B]]"]);
+});
+
+test("settings that map the year and the date to one property keep the full date", async () => {
+	const { app, library, settings } = setup();
+	settings.propertyNames.year = "date";
+	settings.propertyNames.published = "date";
+	const data: ReferenceData = { type: "book", title: "T", authors: [], familyNames: [], date: "2021-05-04", year: 2021, source: "test" };
+	const note = await library.exclusive(() => library.create(data, "queued"));
+	await flush();
+	assert.equal(fm(app, note).date, "2021-05-04");
+});
+
+test("clip metadata fills what the page lacks, under the library's property names", async () => {
+	const { app, inbox } = setup();
+	const clip = app.vault.addFile("Inbox/c.md", `---\n{"source":"https://blog.example/p","title":"Clip","date":"March 3, 2024","summary":"What it says."}\n---\n`);
+	http.handler = async () => ({ status: 200, text: `<html><head><title>Post</title></head></html>` });
+	assert.ok(await inbox.process(clip));
+	await flush();
+	assert.equal(fm(app, clip).published, "2024-03-03");
+	assert.equal(fm(app, clip).abstract, "What it says.");
+	assert.equal(fm(app, clip).title, "Post");
+});
+
+test("a page with no title doesn't replace the clip's title with its URL", async () => {
+	const { app, inbox } = setup();
+	const clip = app.vault.addFile("Inbox/c.md", `---\n{"source":"https://blog.example/p","title":"Real Title"}\n---\n`);
+	http.handler = async () => ({ status: 200, text: `<html><body>x</body></html>` });
+	assert.ok(await inbox.process(clip));
+	await flush();
+	assert.equal(fm(app, clip).title, "Real Title");
+});
+
+test("clip authors are read from lists, [[links]] with aliases, or a plain name", () => {
+	const props = withDefaults({}).propertyNames;
+	assert.deepEqual(fromClip({ author: ["[[Andy Weir|Weir]]", "Jo March"] }, props, "x").authors, ["Andy Weir", "Jo March"]);
+	assert.deepEqual(fromClip({ author: "[[A One]], [[B Two]]" }, props, "x").authors, ["A One", "B Two"]);
+	assert.deepEqual(fromClip({ author: "Plain Name" }, props, "x").authors, ["Plain Name"]);
+	assert.equal(fromClip({ published: "2021-05-04" }, props, "x").date, "2021-05-04");
+	assert.equal(fromClip({}, props, "Fallback").title, "Fallback");
 });

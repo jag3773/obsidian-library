@@ -6,6 +6,8 @@ export interface ReferenceData {
 	authors: string[];
 	/** Family names, same order as authors; used for citekeys. */
 	familyNames: string[];
+	/** Publication date, ISO: YYYY-MM-DD, YYYY-MM or YYYY. */
+	date?: string;
 	year?: number;
 	publisher?: string;
 	journal?: string;

@@ -7,21 +7,31 @@ Status: early (0.1). Capture features are in place. The reading round trip (send
 ## What it does today
 
 - **Add reference.** Paste an ISBN, DOI, arXiv ID or URL. The plugin looks up the metadata, checks for a duplicate, creates the note with a citekey filename, and opens it.
-- **Process the inbox.** Drop a Web Clipper note or a PDF into your inbox folder. Notes get enriched from their URL and filed. PDFs are scanned for a DOI or ISBN, looked up, given a note, and moved to your attachments folder.
+- **Process the inbox.** Drop a Web Clipper note or a PDF into your inbox folder. Notes get enriched from their URL and filed. What Web Clipper saved (author, published date, description) fills anything the lookup can't find, which covers sites that turn the plugin away. PDFs are scanned for a DOI or ISBN, looked up, given a note, and moved to your attachments folder.
 - **Complete a note from its properties.** Create a note in your references folder, type an `isbn`, `doi` or `url` property, and the plugin fills in the rest and renames it.
 - **Citekeys.** Uses a Better BibTeX-compatible formula (default `auth.lower + shorttitle(3, 3) + year`), so new keys match the style of an existing Zotero library.
 
-The plugin only fills empty properties. It never overwrites what you typed.
+Every reference gets, where the source has them, a title, authors, publication date (`published`), year, abstract, publisher, ISBN or DOI.
+
+The plugin only fills empty properties. It never overwrites what you typed. The one exception is a note it files from the inbox: there, values it looked up replace the guesses Web Clipper made from the page (its page title, a shortened description). The URL and status are kept.
 
 ## Everything is a setting
 
 Folders, filename formats, citekey pattern, statuses and the note template are configurable. Folder and template settings suggest matching paths from your vault as you type.
 
-**Point it at your library's base.** Under **Library base**, choose the `.base` file that shows your library, or press **Create base** to make one. The plugin reads the folder the base requires (a `file.inFolder(...)` filter every note must match; negated or either/or folders are ignored) and the properties it uses, and matches each field it writes to one of them, by name or a common synonym (`author` for authors, `source` for url, `date` for year, and so on). Each match is a dropdown, so you only change the ones it got wrong. A field with no matching property is created under the plugin's default name. **Create base** keeps your current mapping, and records each field's name in the base so **Re-read** recovers it.
+**Point it at your library's base.** Under **Library base**, choose the `.base` file that shows your library, or press **Create base** to make one. The plugin reads the folder the base requires (a `file.inFolder(...)` filter every note must match; negated or either/or folders are ignored) and the properties it uses, and matches each field it writes to one of them, by name or a common synonym (`author` for authors, `source` for url, `date` for the publication date, `description` for the abstract, and so on). Each match is a dropdown, so you only change the ones it got wrong. A field with no matching property is created under the plugin's default name. **Create base** keeps your current mapping, and records each field's name in the base so **Re-read** recovers it.
 
 ## Metadata sources
 
-Open Library and Google Books (ISBN), Crossref and doi.org (DOI), arXiv, and a web page's own meta tags (URL). No API keys. The plugin sends only the identifier you looked up. Set a Crossref contact email if you want to use Crossref's polite pool; nothing is sent otherwise.
+Open Library and Google Books (ISBN), Crossref and doi.org (DOI), arXiv, and GitHub's public API (repositories). No API keys. The plugin sends only the identifier you looked up. Set a Crossref contact email if you want to use Crossref's polite pool; nothing is sent otherwise.
+
+For other URLs it reads the page itself, the way Zotero's translators do, trusting the most specific source first:
+
+1. **Site readers** for Amazon, Goodreads and Kobo book pages and GitHub repositories, which keep their best data outside the standard tags.
+2. **schema.org JSON-LD**, including a book's edition (`workExample`).
+3. **Standard tags:** Highwire `citation_*` (used by Google Scholar), Dublin Core, PRISM and Open Graph.
+
+A page that names a DOI is looked up through Crossref. A book page that names an ISBN gets missing dates, publishers and descriptions from Open Library and Google Books; the page's own values win. A bot check served in place of the page (Kobo, Cloudflare, an Amazon captcha) is recognized and ignored, so its title never becomes the reference's.
 
 ## Install (beta)
 
