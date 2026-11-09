@@ -23,3 +23,8 @@
   padding: 0.25em 0.5em;
   text-align: left;
 }
+
+.stacks-cite-meta {
+  display: block;
+  color: var(--text-muted);
+}

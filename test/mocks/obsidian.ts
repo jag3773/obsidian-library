@@ -414,6 +414,21 @@ export class Modal {
 	close() {}
 	setTitle() {}
 }
+export class SuggestModal<T> extends Modal {
+	emptyStateText = "";
+	static opened: SuggestModal<any>[] = [];
+	setPlaceholder() {}
+	setInstructions() {}
+	open() {
+		SuggestModal.opened.push(this);
+	}
+	/** Test hook: choose the first suggestion for a query, as Enter would. */
+	pick(query: string): T | undefined {
+		const item = (this as any).getSuggestions(query)[0] as T | undefined;
+		if (item !== undefined) (this as any).onChooseSuggestion(item, {});
+		return item;
+	}
+}
 export class PluginSettingTab {
 	containerEl: any = { empty() {}, createEl() {} };
 	constructor(public app: App, public plugin: unknown) {}

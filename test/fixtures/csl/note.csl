@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A minimal note (footnote) style written for Stacks' tests (MIT, like the rest of the repository). -->
+<style xmlns="http://purl.org/net/xbiblio/csl" class="note" version="1.0">
+  <info>
+    <title>Stacks test note</title>
+    <id>https://github.com/jag3773/obsidian-stacks/test/note</id>
+    <updated>2026-11-09T00:00:00+00:00</updated>
+  </info>
+  <macro name="author">
+    <names variable="author">
+      <name and="text" delimiter=", "/>
+    </names>
+  </macro>
+  <citation>
+    <layout suffix="." delimiter="; ">
+      <group delimiter=", ">
+        <text macro="author"/>
+        <text variable="title" font-style="italic"/>
+        <text variable="publisher"/>
+        <date variable="issued">
+          <date-part name="year"/>
+        </date>
+        <text variable="locator"/>
+      </group>
+    </layout>
+  </citation>
+  <bibliography>
+    <sort>
+      <key macro="author"/>
+    </sort>
+    <layout suffix=".">
+      <group delimiter=". ">
+        <names variable="author">
+          <name name-as-sort-order="first" and="text" delimiter=", "/>
+        </names>
+        <text variable="title" font-style="italic"/>
+        <text variable="publisher"/>
+      </group>
+    </layout>
+  </bibliography>
+</style>

@@ -19,6 +19,7 @@ import { ReportModal } from "./ui/ReportModal";
 import { ZoteroImporter } from "./zoteroImport";
 import { ConflictModal } from "./ui/ConflictModal";
 import { asText } from "./text";
+import { Citations } from "./citations";
 
 const PREFIX = "Stacks";
 const COMPLETE_DEBOUNCE_MS = 2000;
@@ -36,6 +37,7 @@ export default class LibraryPlugin extends Plugin {
 	exporter!: BibliographyExporter;
 	importer!: ZoteroImporter;
 	extractor!: Extractor;
+	citations!: Citations;
 	/** Desktop only; null on mobile. */
 	roundTrip: RoundTrip | null = null;
 	private host: Host | null = null;
@@ -172,6 +174,9 @@ export default class LibraryPlugin extends Plugin {
 				);
 			})
 		);
+		// Formatted citations and inserting citations (docs/citing.md).
+		this.citations = new Citations(this);
+		this.citations.register();
 		this.addCommand({
 			id: "extract-annotations",
 			name: "Extract annotations for current note",

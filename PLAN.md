@@ -95,7 +95,7 @@ All paths are vault-relative unless marked absolute. "Example (ekfocus)" shows t
 | Setting | Default | Purpose |
 |---|---|---|
 | Bibliography file, format, filter, automatic | `library.json`, CSL-JSON, none, off | Done: CSL-JSON, BibLaTeX or BibTeX export, optionally filtered by a property and rewritten automatically ([#19](https://github.com/jag3773/obsidian-stacks/issues/19)) |
-| Citation style | `chicago-author-date` | CSL style for the "copy formatted citation" command |
+| Citation style, locale, insert format, ask for a page | bundled Chicago author-date, en-US, Pandoc, off | Done: a `.csl` style and CSL locale from the vault for the formatted citation and bibliography commands; how **Insert citation** writes citations ([#20](https://github.com/jag3773/obsidian-stacks/issues/20), [#21](https://github.com/jag3773/obsidian-stacks/issues/21)) |
 | Health check scope | all | Which checks the report runs |
 
 ### 4.4 Citekey pattern
@@ -157,7 +157,8 @@ All requests go through Obsidian's `requestUrl`, which works on mobile and avoid
 
 ### Stage 3: citations and maintenance
 
-- **Copy formatted citation** and **Copy citekey as Pandoc citation** (`[@key]`).
+- Done: **Copy formatted citation**, **Copy formatted bibliography** (a reference, a selection, a folder, a base's folder, or the references a draft cites) and **Copy citekey as Pandoc citation** (`[@key]`), formatted by citeproc-js with a bundled Chicago author-date style and en-US locale or a `.csl` file from the vault, copied as HTML and plain text ([#20](https://github.com/jag3773/obsidian-stacks/issues/20)). `src/csl.ts`; licences in NOTICE.md.
+- Done: **Insert citation**, a picker over reference notes from the metadata cache, searchable by citekey, title, author and year; inserts `[@key]`, `[[key]]` or both, with an optional locator, and joins a Pandoc citation at the cursor (`[@a; @b]`) ([#21](https://github.com/jag3773/obsidian-stacks/issues/21)). `src/cite.ts`; the Pandoc and Quarto path is in docs/citing.md.
 - Done: bibliography export to CSL-JSON (for Pandoc, Quarto and the Pandoc Reference List plugin), BibLaTeX or BibTeX, regenerated after reference changes with a debounce. Written without citation.js: the mapping is `src/citation.ts`, documented in docs/citation-fields.md.
 - **Health check** report note: notes without a citekey, duplicate citekeys or DOIs/ISBNs, `pdf` links that don't resolve, PDFs in the attachments folder with no note, items stuck in a status longer than a set number of days.
 - Done: **Import from Zotero (Better BibTeX JSON)**, the conversion this project used once, generalized ([#18](https://github.com/jag3773/obsidian-stacks/issues/18)). Matches by filename, citekey property, Zotero item key, then a unique title; adds properties without touching bodies; creates notes for unmatched items; previews first; reports, and can be undone. See docs/migrating-from-zotero.md.
