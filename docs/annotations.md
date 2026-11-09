@@ -37,12 +37,12 @@ Stacks reads the PDF linked in the note's `pdf` property (or the first PDF in `a
 | In the PDF | In the note |
 | --- | --- |
 | Highlight, underline, strikeout, squiggly | A callout chosen by color, with the text under the annotation |
-| A comment on one of those, and replies to it | A nested `[!note] Comment` callout |
+| A comment on one of those, replies to it, and replies to those replies | A nested `[!note] Comment` callout |
 | Sticky note, text box | A `note` callout (see `note:` in the color map) |
 | Rectangle (an "image" area in some readers) | An embed of the page |
 | Ink drawings, shapes, stamps | Skipped and counted in the notice |
 
-Most PDFs don't store the highlighted text, only where the highlight sits. Stacks reads the words underneath, so highlights that start or stop mid-word are rounded to whole words, and a word broken across lines by a hyphen is joined again.
+Most PDFs don't store the highlighted text, only where the highlight sits. Stacks reads the words underneath, placing each word with the font's own glyph widths, so highlights that start or stop mid-word are rounded to whole words, and a word broken across lines by a hyphen is joined again.
 
 **Scanned pages** have no text to read. Highlights there are kept as an embed of the page (`![[file.pdf#page=N]]`), and the notice names the pages. Stacks doesn't do OCR; the pre-extraction command (below) is the place to plug one in.
 
@@ -98,7 +98,7 @@ Set up under **Settings → Reading round trip**:
 
 1. **Send.** Set the status to `reading`, or run **Stacks: Send PDF to tablet folder**. The PDF is copied under its attachment name (for example `smith2020.pdf`). Stacks records a fingerprint (SHA-256) of the file as sent. It never overwrites a copy in the folder that has changes it hasn't brought back.
 2. **Read and highlight** on the tablet. The app saves your highlights into the PDF and syncs it back to the folder.
-3. **Return.** While Obsidian runs, Stacks watches the folder, and it checks the whole folder each time Obsidian starts. **Stacks: Check tablet folder for returned PDFs** checks on demand. When a PDF's fingerprint differs from what was sent, Stacks waits until the sync client has finished writing it, runs the pre-extraction command if you set one, copies it over the attachment in the vault, sets the status to `reviewing`, and extracts the annotations into the note.
+3. **Return.** While Obsidian runs, Stacks watches the folder, and it checks the whole folder each time Obsidian starts. **Stacks: Check tablet folder for returned PDFs** checks on demand. When a PDF's fingerprint differs from what was sent, Stacks waits until the sync client has finished writing it (a file that keeps changing is left for the next check), checks that it opens as a PDF, runs the pre-extraction command if you set one, copies it over the attachment in the vault, sets the status to `reviewing`, and extracts the annotations into the note.
 4. **Review** in Obsidian's viewer or PDF++. With **Extract when a PDF is saved** on, changes you make there update the note too.
 
 Returned PDFs are matched by file name, and the fingerprint tells a real change from a re-sync of the same file. Stacks also follows the attachment when you rename it in Obsidian. If it was renamed while Obsidian was closed, Stacks finds it through the note's `pdf` link or by its content.
@@ -111,7 +111,7 @@ If the PDF changed in the vault (for example, you highlighted in PDF++) **and** 
 - **Keep vault copy**: the vault copy stays; the tablet copy is saved next to it as `smith2020 (tablet copy 2026-11-09).pdf`.
 - **Decide later**: nothing changes, and you're asked again at the next check.
 
-Either way both versions are kept, and the saved copy is linked from the note's `attachments`.
+Either way both versions are kept, and the saved copy is linked from the note's `attachments`. If the vault copy changes again while the dialog is open, or while the pre-extraction command runs, nothing is replaced and you're asked again with the current copies.
 
 ### Mobile
 

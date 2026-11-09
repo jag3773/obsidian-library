@@ -8,7 +8,7 @@
 
 import { App, TFile, moment, normalizePath } from "obsidian";
 import { ExtractSummary, Extractor, describeExtraction } from "./extract";
-import { Library } from "./library";
+import { Cancelled, Library } from "./library";
 import { readAnnotations } from "./pdf";
 import { LibrarySettings } from "./settings";
 
@@ -170,36 +170,42 @@ export class RoundTrip {
 			const folder = await this.requireFolder();
 			const pdf = this.extractor.pdfFor(note);
 			if (!pdf) throw new Error(`${note.basename} has no PDF to send.`);
-			const target = this.host.join(folder, pdf.name);
+			// An attachment sent before keeps its name in the tablet folder, even if renamed in the vault since.
+			const name = Object.values(this.s.tabletSent).find((r) => r.attachment === pdf.path)?.file ?? pdf.name;
+			const target = this.host.join(folder, name);
 			const bytes = await this.vaultBytes(pdf);
 			const hash = await sha256(bytes);
-			const rec = this.s.tabletSent[pdf.name];
+			const rec = this.s.tabletSent[name];
 			if (rec && rec.attachment !== pdf.path && this.app.vault.getAbstractFileByPath(rec.attachment))
-				throw new Error(`the tablet folder already holds ${pdf.name} for ${rec.attachment}.`);
+				throw new Error(`the tablet folder already holds ${name} for ${rec.attachment}.`);
 			const there = await this.host.stat(target);
 			if (there) {
 				const theirs = await sha256(await this.host.readFile(target));
 				if (theirs === hash) {
-					await this.record(pdf, note, hash, theirs, there, "sent");
-					return `${pdf.name} is already in the tablet folder.`;
+					await this.record(name, pdf, note, hash, theirs, there, "sent");
+					return `${name} is already in the tablet folder.`;
 				}
 				// Never overwrite reading the person hasn't brought back.
 				if (!rec || theirs !== rec.externalHash)
-					throw new Error(`the tablet copy of ${pdf.name} has changes that aren't in the vault yet. Run "Check tablet folder" first.`);
+					throw new Error(`the tablet copy of ${name} has changes that aren't in the vault yet. Run "Check tablet folder" first.`);
 			}
 			await this.host.writeFile(target, bytes);
 			const stat = await this.host.stat(target);
-			await this.record(pdf, note, hash, hash, stat ?? { size: bytes.length, mtimeMs: Date.now() }, "sent");
-			return `sent ${pdf.name} to the tablet folder.`;
+			await this.record(name, pdf, note, hash, hash, stat ?? { size: bytes.length, mtimeMs: Date.now() }, "sent");
+			return `sent ${name} to the tablet folder.`;
 		});
 	}
 
-	/** Remember the state of both copies. `event` says whether this was a send, a return, or just a re-check. */
-	private async record(pdf: TFile, note: TFile, vaultHash: string, externalHash: string, stat: FileStat, event: "sent" | "returned" | "checked"): Promise<void> {
-		const prev = this.s.tabletSent[pdf.name];
+	/**
+	 * Remember the state of both copies, under the file's name in the tablet folder (which stays
+	 * the same when the attachment is renamed in the vault). `event` says whether this was a
+	 * send, a return, or just a re-check.
+	 */
+	private async record(name: string, pdf: TFile, note: TFile, vaultHash: string, externalHash: string, stat: FileStat, event: "sent" | "returned" | "checked"): Promise<void> {
+		const prev = this.s.tabletSent[name];
 		const now = new Date().toISOString();
-		this.s.tabletSent[pdf.name] = {
-			file: pdf.name,
+		this.s.tabletSent[name] = {
+			file: name,
 			attachment: pdf.path,
 			note: note.path,
 			vaultHash,
@@ -261,7 +267,10 @@ export class RoundTrip {
 		});
 	}
 
-	/** Wait until a file stops changing (a sync client may still be writing it). */
+	/**
+	 * Wait until a file stops changing (a sync client may still be writing it). Null when it
+	 * disappears or is still changing after the last try: the watcher or the next check retries.
+	 */
 	private async settled(path: string): Promise<FileStat | null> {
 		let prev = await this.host.stat(path);
 		for (let i = 0; prev && i < SETTLE_TRIES; i++) {
@@ -271,7 +280,21 @@ export class RoundTrip {
 			if (now.size === prev.size && now.mtimeMs === prev.mtimeMs) return now;
 			prev = now;
 		}
-		return prev;
+		return null;
+	}
+
+	/** Throw unless PDF.js can open the bytes: checked before anything replaces a vault copy. */
+	private async assertReadable(bytes: Uint8Array, name: string): Promise<void> {
+		try {
+			await readAnnotations(bytes, name);
+		} catch (e) {
+			throw new Error(`the copy isn't a readable PDF yet (${e instanceof Error ? e.message : String(e)})`);
+		}
+	}
+
+	/** True when the vault copy still has the content it had when the decision was made. */
+	private async vaultStill(pdf: TFile, hash: string): Promise<boolean> {
+		return this.library.exists(pdf) && (await sha256(await this.vaultBytes(pdf))) === hash;
 	}
 
 	/** The vault attachment a record belongs to, following renames made while Obsidian was closed. */
@@ -329,10 +352,14 @@ export class RoundTrip {
 		rec ??= { file: name, attachment: target.pdf.path, note: target.note.path, vaultHash: ourHash, externalHash: ourHash, externalSize: 0, externalMtime: 0, sentAt: "" };
 		const state = classifyReturn(rec, theirHash, ourHash);
 		if (state === "unchanged") {
-			// Remember the stat so the next scan skips it.
-			await this.record(target.pdf, target.note, ourHash, theirHash, stat, "checked");
+			// Remember the stat so the next scan skips it. The baseline moves only when the two
+			// copies are identical: a vault edit that never reached the tablet stays an edit, so a
+			// later return still shows up as a conflict instead of overwriting it.
+			const inSync = theirHash === ourHash;
+			await this.record(name, target.pdf, target.note, inSync ? ourHash : rec.vaultHash, inSync ? theirHash : rec.externalHash, stat, "checked");
 			return false;
 		}
+		await this.assertReadable(theirs, name);
 		if (state === "conflict") {
 			const choice = await this.ui.conflict({
 				note: target.note,
@@ -341,16 +368,20 @@ export class RoundTrip {
 				tablet: { ...stat, annotations: await this.countAnnotations(theirs, name) },
 			});
 			if (choice === "later") return false;
+			// The dialog may have stayed open a while: decide again if the vault copy changed meanwhile.
+			if (!(await this.vaultStill(target.pdf, ourHash))) {
+				this.ui.notice(`Stacks: ${target.pdf.name} changed in the vault while you were deciding; nothing was replaced, and you'll be asked again.`);
+				return false;
+			}
 			if (choice === "vault") {
 				await this.keepCopy(target, theirs, "tablet");
-				await this.record(target.pdf, target.note, ourHash, theirHash, stat, "returned");
+				await this.record(name, target.pdf, target.note, ourHash, theirHash, stat, "returned");
 				this.ui.notice(`Stacks: kept the vault copy of ${target.pdf.name}; the tablet copy was saved next to it.`);
 				return false;
 			}
 			await this.keepCopy(target, ours, "vault");
 		}
-		await this.bringBack(target, theirs, theirHash, stat);
-		return true;
+		return this.bringBack(name, target, theirs, theirHash, stat, ourHash);
 	}
 
 	private async countAnnotations(bytes: Uint8Array, name: string): Promise<number | undefined> {
@@ -371,21 +402,33 @@ export class RoundTrip {
 		return copy;
 	}
 
-	/** Write the returned copy over the attachment, set the status, extract. */
-	private async bringBack(target: { pdf: TFile; note: TFile }, theirs: Uint8Array, theirHash: string, stat: FileStat): Promise<void> {
+	/**
+	 * Write the returned copy over the attachment, set the status, extract. `vaultHash` is the
+	 * vault copy this replaces; if it changed meanwhile (the pre-extraction command can take
+	 * minutes), nothing is replaced and the next check decides again.
+	 */
+	private async bringBack(name: string, target: { pdf: TFile; note: TFile }, theirs: Uint8Array, theirHash: string, stat: FileStat, vaultHash: string): Promise<boolean> {
 		const s = this.s;
 		let bytes = theirs;
 		if (s.preExtractionCommand.trim()) {
 			try {
-				bytes = (await runPreExtraction(this.host, s.preExtractionCommand, theirs, target.pdf.name)) ?? theirs;
+				const processed = await runPreExtraction(this.host, s.preExtractionCommand, theirs, target.pdf.name);
+				if (processed) {
+					await this.assertReadable(processed, target.pdf.name);
+					bytes = processed;
+				}
 			} catch (e) {
 				this.ui.notice(`Stacks: ${e instanceof Error ? e.message : String(e)}. Using the PDF as it came back.`);
 			}
 		}
-		if (!this.active()) return;
+		if (!(await this.vaultStill(target.pdf, vaultHash))) {
+			this.ui.notice(`Stacks: ${target.pdf.name} changed in the vault while it was being brought back; nothing was replaced, and it will be checked again.`);
+			return false;
+		}
+		this.assertActiveOrThrow();
 		this.markBusy(target.pdf.path);
 		await this.app.vault.modifyBinary(target.pdf, toArrayBuffer(bytes));
-		await this.record(target.pdf, target.note, await sha256(bytes), theirHash, stat, "returned");
+		await this.record(name, target.pdf, target.note, await sha256(bytes), theirHash, stat, "returned");
 		if (s.returnStatus.trim()) {
 			this.markBusy(target.note.path);
 			await this.app.fileManager.processFrontMatter(target.note, (f: Record<string, unknown>) => {
@@ -398,8 +441,14 @@ export class RoundTrip {
 			const summary: ExtractSummary = await this.extractor.extract(target.note, toArrayBuffer(bytes));
 			this.ui.notice(`Stacks: ${describeExtraction(summary)}`);
 		} catch (e) {
+			if (e instanceof Cancelled) throw e;
 			this.ui.notice(`Stacks: brought back ${target.pdf.name}, but extraction failed: ${e instanceof Error ? e.message : String(e)}`);
 		}
+		return true;
+	}
+
+	private assertActiveOrThrow(): void {
+		if (!this.active()) throw new Cancelled();
 	}
 
 	/** Watch the tablet folder while Obsidian runs. */

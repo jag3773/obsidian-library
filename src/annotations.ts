@@ -49,6 +49,13 @@ export interface PdfDocumentLike {
 export interface PdfPageLike {
 	getAnnotations(params?: { intent?: string }): Promise<RawAnnotation[]>;
 	getTextContent(): Promise<{ items: unknown[] }>;
+	/** Used for glyph widths when available (PDF.js always has it). */
+	getOperatorList?(): Promise<{ fnArray: ArrayLike<number>; argsArray: unknown[] }>;
+}
+/** PDF.js's operator codes, from the module (pdfjs.OPS). */
+export interface PdfOps {
+	setFont: number;
+	showText: number;
 }
 export interface RawAnnotation {
 	id?: string;
@@ -66,7 +73,11 @@ export interface TextItem {
 	width: number;
 	height: number;
 	hasEOL?: boolean;
+	fontName?: string;
 }
+
+/** Each font's glyph widths by character, from the page's drawing operations. */
+export type FontWidths = Map<string, Map<string, number>>;
 
 // ---------------------------------------------------------------- colors
 
@@ -177,8 +188,8 @@ export function quadBoxes(quads: RawAnnotation["quadPoints"], rect?: ArrayLike<n
 }
 
 /**
- * Relative glyph widths, roughly Helvetica's, so a highlight that covers part of a line maps to
- * the right characters. PDF.js gives one item per run of text, not per glyph.
+ * Relative glyph widths, roughly Helvetica's: the fallback when the font's own widths aren't
+ * known. PDF.js gives one text item per run of text, not per glyph.
  */
 function glyphWidth(c: string): number {
 	if (c === " ") return 0.28;
@@ -198,7 +209,7 @@ const isTextItem = (v: unknown): v is TextItem =>
  * when the item's line overlaps the box vertically by at least half the line height.
  * Whole words, because readers' quads rarely end exactly on a glyph edge.
  */
-function textInBox(item: TextItem, box: Box): string {
+function textInBox(item: TextItem, box: Box, fontWidths?: Map<string, number>): string {
 	const [a, b, , d, x, y] = item.transform;
 	// Rotated text: only take it when the whole item sits inside the box.
 	const h = Math.abs(d) || item.height || 1;
@@ -210,12 +221,16 @@ function textInBox(item: TextItem, box: Box): string {
 	}
 	if (overlap < Math.min(top - bottom, box.y2 - box.y1) * 0.5) return "";
 	const chars = [...item.str];
-	const total = chars.reduce((n, c) => n + glyphWidth(c), 0) || 1;
+	// The font's real widths when every character has one; otherwise the estimate. Either way the
+	// widths are scaled to the run's measured width, so only their proportions matter.
+	const known = fontWidths && chars.every((c) => fontWidths.has(c));
+	const width = (c: string) => (known ? (fontWidths as Map<string, number>).get(c) as number : glyphWidth(c));
+	const total = chars.reduce((n, c) => n + width(c), 0) || 1;
 	const scale = (item.width || 0) / total;
 	let pos = x;
 	const xs = chars.map((c) => {
 		const start = pos;
-		pos += glyphWidth(c) * scale;
+		pos += width(c) * scale;
 		return { c, mid: (start + pos) / 2 };
 	});
 	// Group into words and spaces, keeping the spaces between kept words.
@@ -249,12 +264,12 @@ export function joinLines(lines: string[]): string {
 }
 
 /** Text of the page under the given boxes, in reading order. */
-export function textUnder(items: unknown[], boxes: Box[]): string {
+export function textUnder(items: unknown[], boxes: Box[], widths?: FontWidths): string {
 	const lines: string[] = [];
 	for (const box of boxes) {
 		const parts: string[] = [];
 		for (const it of items) if (isTextItem(it) && it.str) {
-			const t = textInBox(it, box);
+			const t = textInBox(it, box, it.fontName ? widths?.get(it.fontName) : undefined);
 			if (t) parts.push(t);
 		}
 		lines.push(parts.join(" "));
@@ -286,10 +301,72 @@ export function shortHash(s: string): string {
 	return (h >>> 0).toString(36).padStart(6, "0").slice(-6);
 }
 
+/**
+ * Glyph widths per font, read from the page's operator list: setFont names the font (the same
+ * name text items carry), showText lists glyphs with their character and advance width.
+ */
+export async function fontWidths(page: PdfPageLike, ops?: PdfOps): Promise<FontWidths | undefined> {
+	if (!ops || !page.getOperatorList) return undefined;
+	try {
+		const list = await page.getOperatorList();
+		const out: FontWidths = new Map();
+		let font = "";
+		for (let i = 0; i < list.fnArray.length; i++) {
+			const fn = list.fnArray[i];
+			const args = list.argsArray[i] as unknown[] | null;
+			if (fn === ops.setFont && args && typeof args[0] === "string") font = args[0];
+			else if (fn === ops.showText && font && Array.isArray(args?.[0])) {
+				let m = out.get(font);
+				if (!m) out.set(font, (m = new Map()));
+				for (const g of args[0] as unknown[]) {
+					const glyph = g as { unicode?: unknown; width?: unknown } | number | null;
+					if (glyph && typeof glyph === "object" && typeof glyph.unicode === "string" && typeof glyph.width === "number" && glyph.unicode)
+						m.set(glyph.unicode, glyph.width);
+				}
+			}
+		}
+		return out;
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * Comments that reply to each retained annotation, following reply chains (a reply to a reply)
+ * up to the annotation that started the thread. Replies whose thread starts at an annotation
+ * that isn't kept, or that loop, are counted as orphans.
+ */
+function replyThreads(raw: RawAnnotation[], isReply: (a: RawAnnotation) => boolean, retained: Set<string>): { threads: Map<string, string[]>; orphans: number } {
+	const byId = new Map(raw.filter((a) => a.id).map((a) => [a.id as string, a]));
+	const threads = new Map<string, string[]>();
+	let orphans = 0;
+	for (const a of raw) {
+		if (!isReply(a)) continue;
+		const c = commentOf(a);
+		let parent = a.inReplyTo;
+		const visited = new Set<string>([a.id ?? ""]);
+		while (parent && !retained.has(parent)) {
+			const p = byId.get(parent);
+			if (!p || visited.has(parent) || !isReply(p)) {
+				parent = undefined;
+				break;
+			}
+			visited.add(parent);
+			parent = p.inReplyTo;
+		}
+		if (!parent) {
+			if (c) orphans++;
+			continue;
+		}
+		if (c) threads.set(parent, [...(threads.get(parent) ?? []), c]);
+	}
+	return { threads, orphans };
+}
+
 const commentOf = (a: RawAnnotation) => (a.contentsObj?.str ?? a.contents ?? "").replace(/\r\n?/g, "\n").trim();
 
 /** Read every supported annotation in a document. */
-export async function collectAnnotations(doc: PdfDocumentLike): Promise<ExtractResult> {
+export async function collectAnnotations(doc: PdfDocumentLike, ops?: PdfOps): Promise<ExtractResult> {
 	const labels = await doc.getPageLabels().catch(() => null);
 	const annotations: Annotation[] = [];
 	const pagesWithoutText: number[] = [];
@@ -299,23 +376,24 @@ export async function collectAnnotations(doc: PdfDocumentLike): Promise<ExtractR
 		const page = await doc.getPage(n);
 		const raw = (await page.getAnnotations({ intent: "display" })).filter((a) => a.subtype && !IGNORED.has(a.subtype));
 		if (!raw.length) continue;
-		const replies = new Map<string, string[]>();
+		const isReply = (a: RawAnnotation) => !!a.inReplyTo && (a.subtype === "Text" || a.subtype === "FreeText");
 		const own: RawAnnotation[] = [];
 		for (const a of raw) {
-			if (a.inReplyTo && (a.subtype === "Text" || a.subtype === "FreeText")) {
-				const c = commentOf(a);
-				if (c) replies.set(a.inReplyTo, [...(replies.get(a.inReplyTo) ?? []), c]);
-			} else if (KINDS[a.subtype as string]) own.push(a);
+			if (isReply(a)) continue;
+			if (KINDS[a.subtype as string]) own.push(a);
 			else skipped++;
 		}
+		const { threads: replies, orphans } = replyThreads(raw, isReply, new Set(own.map((a) => a.id).filter((id): id is string => !!id)));
+		skipped += orphans;
 		if (!own.length) continue;
 		const items = (await page.getTextContent()).items;
 		const hasText = items.some((i) => isTextItem(i) && i.str.trim());
+		const widths = hasText && own.some((a) => KINDS[a.subtype as string] !== "note" && KINDS[a.subtype as string] !== "image") ? await fontWidths(page, ops) : undefined;
 		let usedTextlessPage = false;
 		for (const a of own) {
 			const kind = KINDS[a.subtype as string];
 			const boxes = quadBoxes(kind === "note" || kind === "image" ? null : a.quadPoints, a.rect);
-			const text = kind === "note" || kind === "image" || !hasText ? "" : textUnder(items, boxes);
+			const text = kind === "note" || kind === "image" || !hasText ? "" : textUnder(items, boxes, widths);
 			const comments = [commentOf(a), ...(a.id ? replies.get(a.id) ?? [] : [])].filter(Boolean);
 			if (kind === "note" && !comments.length) continue;
 			if (!text && kind !== "note") usedTextlessPage ||= !hasText;

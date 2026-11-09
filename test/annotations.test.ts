@@ -29,7 +29,7 @@ async function open(pages: FixturePage[], roman?: number): Promise<PdfDocumentLi
 async function extract(pages: FixturePage[], roman?: number) {
 	const doc = await open(pages, roman);
 	try {
-		return await collectAnnotations(doc);
+		return await collectAnnotations(doc, pdfjs.OPS);
 	} finally {
 		await doc.destroy();
 	}
@@ -100,6 +100,48 @@ test("comments, replies, sticky notes, page labels, ordering, and skipped drawin
 	);
 	assert.equal(r.skipped, 1, "the ink drawing; links are part of the page");
 	assert.equal(r.pageCount, 2);
+});
+
+// PR #37 review: word positions come from the font's own glyph widths, not Helvetica's.
+test("highlights in a monospaced font select exactly the covered words", async () => {
+	const text = "The minimum width is measured in millimeters.";
+	// Courier is 0.6 em per glyph: "is measured in" spans x = 201.6 to 302.4 at 12pt from x = 72.
+	const r = await extract([
+		{ text: [{ x: 72, y: 700, text, font: "Courier" }], annots: [{ subtype: "Highlight", rect: [201.6, 695, 302.4, 712], quads: lineQuad(201.6, 302.4, 700), color: [1, 1, 0] }] },
+	]);
+	assert.equal(r.annotations[0].text, "is measured in");
+	assert.deepEqual(r.pagesWithoutText, []);
+	// Narrow highlights over each word come back as that word alone.
+	const words = ["The", "minimum", "width", "is", "measured", "in", "millimeters."];
+	let start = 0;
+	const annots = words.map((w) => {
+		const i = text.indexOf(w, start);
+		start = i + w.length;
+		const x1 = 72 + i * 7.2 + 1;
+		const x2 = 72 + (i + w.length) * 7.2 - 1;
+		return { subtype: "Highlight" as const, rect: [x1, 695, x2, 712], quads: lineQuad(x1, x2, 700), color: [1, 1, 0] };
+	});
+	const each = await extract([{ text: [{ x: 72, y: 700, text, font: "Courier" }], annots }]);
+	assert.deepEqual(each.annotations.sort((a, b) => a.left - b.left).map((a) => a.text), words);
+});
+
+// PR #37 review: a reply to a reply belongs to the thread's highlight.
+test("replies to replies are attached to the highlight that started the thread", async () => {
+	const r = await extract([
+		{
+			text: [{ x: 72, y: 700, text: "A claim worth discussing." }],
+			annots: [
+				{ subtype: "Highlight", rect: [72, 695, 300, 712], quads: lineQuad(72, 300, 700), color: [1, 1, 0], contents: "Root comment" },
+				{ subtype: "Text", rect: [10, 10, 30, 30], contents: "First reply", replyTo: 0 },
+				{ subtype: "Text", rect: [10, 40, 30, 60], contents: "Reply to the reply", replyTo: 1 },
+				{ subtype: "Ink", rect: [0, 0, 50, 50] },
+				{ subtype: "Text", rect: [10, 70, 30, 90], contents: "Reply to a drawing", replyTo: 3 },
+			],
+		},
+	]);
+	assert.equal(r.annotations.length, 1);
+	assert.deepEqual(r.annotations[0].comments, ["Root comment", "First reply", "Reply to the reply"]);
+	assert.equal(r.skipped, 2, "the drawing and the reply to it are counted, not silently dropped");
 });
 
 test("ids are stable when a reader rewrites the file in a different object order", async () => {

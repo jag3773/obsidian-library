@@ -1,6 +1,6 @@
 import { App, TFile, moment } from "obsidian";
 import { applyAnnotationBlock, currentAnnotationBlock, headingLevel, parseColorMap, renderAnnotations } from "./annotations";
-import { Library, unlink } from "./library";
+import { Cancelled, Library, unlink } from "./library";
 import { readAnnotations } from "./pdf";
 import { LibrarySettings } from "./settings";
 
@@ -19,8 +19,14 @@ export class Extractor {
 	constructor(
 		private app: App,
 		private library: Library,
-		private settings: () => LibrarySettings
+		private settings: () => LibrarySettings,
+		/** False once the plugin is unloaded; checked before every write. */
+		private active: () => boolean = () => true
 	) {}
+
+	private assertActive(): void {
+		if (!this.active()) throw new Cancelled();
+	}
 
 	/** Link-ish property values on a note, as a list. */
 	private links(note: TFile, key: "pdf" | "attachments"): string[] {
@@ -82,10 +88,13 @@ export class Extractor {
 		const status = summary.count ? this.statusToSet(fm) : null;
 		if (sameBlock && sameCount && !status) return summary;
 		if (!this.library.exists(note)) return summary;
+		// Reading the PDF can take a while; don't write if the plugin was unloaded meanwhile.
+		this.assertActive();
 		if (!sameBlock) {
 			await this.app.vault.process(note, (c) => applyAnnotationBlock(c, block, s.annotationsHeading));
 			summary.changed = true;
 		}
+		this.assertActive();
 		await this.app.fileManager.processFrontMatter(note, (f: Record<string, unknown>) => {
 			f[countKey] = summary.count;
 			if (!sameBlock) f[this.library.prop("lastHighlighted")] = moment().format("YYYY-MM-DD");
@@ -114,6 +123,6 @@ export function describeExtraction(r: ExtractSummary): string {
 	];
 	if (r.pagesWithoutText.length)
 		parts.push(`page${r.pagesWithoutText.length === 1 ? "" : "s"} ${r.pagesWithoutText.join(", ")} ha${r.pagesWithoutText.length === 1 ? "s" : "ve"} no text layer (scanned?), so those highlights are embedded as page images`);
-	if (r.skipped) parts.push(`${r.skipped} drawing or shape annotation${r.skipped === 1 ? "" : "s"} skipped`);
+	if (r.skipped) parts.push(`${r.skipped} other annotation${r.skipped === 1 ? "" : "s"} (drawings, shapes, or replies to them) skipped`);
 	return parts.join("; ") + ".";
 }

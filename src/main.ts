@@ -58,7 +58,7 @@ export default class LibraryPlugin extends Plugin {
 		};
 		this.library = new Library(this.app, () => this.settings, () => this.alive);
 		this.inbox = new Inbox(this.app, this.library, this.fetcher, () => this.settings);
-		this.extractor = new Extractor(this.app, this.library, () => this.settings);
+		this.extractor = new Extractor(this.app, this.library, () => this.settings, () => this.alive);
 		this.host = this.createHost();
 		if (this.host)
 			this.roundTrip = new RoundTrip(
@@ -425,11 +425,16 @@ export default class LibraryPlugin extends Plugin {
 						const before = new Uint8Array(await this.app.vault.readBinary(pdf));
 						const after = await runPreExtraction(this.host, command, before, pdf.name);
 						if (after && !sameBytes(before, after)) {
+							// The command can run for minutes; stop if unloaded, and don't overwrite a PDF that changed meanwhile.
+							if (!this.alive) throw new Cancelled();
+							if (!sameBytes(before, new Uint8Array(await this.app.vault.readBinary(pdf))))
+								throw new Error(`${pdf.name} changed while the pre-extraction command ran`);
 							bytes = toArrayBuffer(after);
 							this.settle(pdf.path);
 							await this.app.vault.modifyBinary(pdf, bytes);
 						}
 					} catch (e) {
+						if (e instanceof Cancelled) throw e;
 						new Notice(`${PREFIX}: ${e instanceof Error ? e.message : String(e)}. Extracting from the PDF as it is.`);
 					}
 				}

@@ -61,7 +61,7 @@ export async function readAnnotations(data: ArrayBuffer | Uint8Array, name: stri
 	const pdfjs: any = await loadPdfJs();
 	const doc = await openPdf(pdfjs, data, name);
 	try {
-		return await collectAnnotations(doc);
+		return await collectAnnotations(doc, pdfjs.OPS);
 	} finally {
 		await doc.destroy();
 	}

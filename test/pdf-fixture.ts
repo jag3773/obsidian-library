@@ -7,6 +7,7 @@ export interface FixtureText {
 	y: number;
 	size?: number;
 	text: string;
+	font?: "Helvetica" | "Courier";
 }
 
 export interface FixtureAnnot {
@@ -54,9 +55,10 @@ export function buildPdf(pages: FixturePage[], options: FixtureOptions = {}): Ui
 	const catalog = reserve();
 	const pagesObj = reserve();
 	const font = add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>");
+	const courier = add("<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>");
 	const pageIds: number[] = [];
 	for (const page of pages) {
-		const stream = (page.text ?? []).map((t) => `BT /F1 ${t.size ?? 12} Tf ${t.x} ${t.y} Td (${esc(t.text)}) Tj ET`).join("\n");
+		const stream = (page.text ?? []).map((t) => `BT /${t.font === "Courier" ? "F2" : "F1"} ${t.size ?? 12} Tf ${t.x} ${t.y} Td (${esc(t.text)}) Tj ET`).join("\n");
 		const content = add(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
 		const pageId = reserve();
 		const annotIds: number[] = [];
@@ -73,7 +75,7 @@ export function buildPdf(pages: FixturePage[], options: FixtureOptions = {}): Ui
 		}
 		const annots = annotIds.length ? ` /Annots [${annotIds.map((i) => `${i} 0 R`).join(" ")}]` : "";
 		objects[pageId - 1] =
-			`<< /Type /Page /Parent ${pagesObj} 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${font} 0 R >> >> /Contents ${content} 0 R${annots} >>`;
+			`<< /Type /Page /Parent ${pagesObj} 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${font} 0 R /F2 ${courier} 0 R >> >> /Contents ${content} 0 R${annots} >>`;
 		pageIds.push(pageId);
 	}
 	objects[pagesObj - 1] = `<< /Type /Pages /Kids [${pageIds.map((i) => `${i} 0 R`).join(" ")}] /Count ${pageIds.length} >>`;

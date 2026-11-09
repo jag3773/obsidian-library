@@ -12,9 +12,9 @@ import { App, Notice, TFile, pdf } from "obsidian";
 import { END_MARKER, START_MARKER } from "../src/annotations";
 import { nodeHost } from "../src/desktop";
 import { Extractor } from "../src/extract";
-import { Library } from "../src/library";
+import { Cancelled, Library } from "../src/library";
 import LibraryPlugin from "../src/main";
-import { ConflictChoice, ConflictInfo, RoundTrip, classifyReturn, toArrayBuffer } from "../src/roundtrip";
+import { ConflictChoice, ConflictInfo, Host, RoundTrip, classifyReturn, toArrayBuffer } from "../src/roundtrip";
 import { LibrarySettings, withDefaults } from "../src/settings";
 import { buildPdf, lineQuad } from "./pdf-fixture";
 
@@ -64,7 +64,7 @@ function tempFolder(): string {
 	return fs.mkdtempSync(path.join(os.tmpdir(), "stacks-tablet-test-"));
 }
 
-function setup(overrides: Partial<LibrarySettings> = {}) {
+function setup(overrides: Partial<LibrarySettings> = {}, wrapHost: (host: Host, app: App) => Host = (h) => h) {
 	const app = new App();
 	const tablet = tempFolder();
 	const settings = withDefaults({ tabletFolder: tablet, ...overrides });
@@ -77,12 +77,15 @@ function setup(overrides: Partial<LibrarySettings> = {}) {
 		notice(m: string) {
 			this.notices.push(m);
 		},
+		/** Runs while the dialog is open, to change things under it. */
+		whileOpen: async () => undefined as void,
 		async conflict(info: ConflictInfo) {
 			this.conflicts.push(info);
+			await this.whileOpen();
 			return this.choice;
 		},
 	};
-	const rt = new RoundTrip(app as any, library, extractor, () => settings, async () => undefined, nodeHost(app as any, modules), ui);
+	const rt = new RoundTrip(app as any, library, extractor, () => settings, async () => undefined, wrapHost(nodeHost(app as any, modules), app), ui);
 	rt.settleMs = 5;
 	const { note, file } = vaultWithReference(app);
 	return { app, settings, library, extractor, ui, rt, tablet, note, file };
@@ -364,4 +367,136 @@ test("extract on save re-extracts when the PDF changes in the vault", async () =
 	await app.vault.modifyBinary(file, toArrayBuffer(HIGHLIGHTED));
 	await until(() => fm(app, note).highlights === 2, 5000);
 	plugin.unload();
+});
+
+// ---------------------------------------------------------------- PR #37 review regressions
+
+const VAULT_EDIT = buildPdf([{ text: TEXT, annots: [{ subtype: "StrikeOut", rect: [72, 695, 300, 712], quads: lineQuad(72, 300, 700), color: [0.6, 0.5, 0.9] }] }]);
+
+test("a tablet copy touched without changes keeps the vault edit as an edit, so a later return is a conflict", async () => {
+	const { app, rt, tablet, note, file, ui, settings } = setup();
+	await rt.send(note);
+	const sent = { ...settings.tabletSent["smith2020.pdf"] };
+	await app.vault.modifyBinary(file, toArrayBuffer(VAULT_EDIT)); // edited in the vault, never sent
+	tabletWrite(path.join(tablet, "smith2020.pdf"), CLEAN); // sync client re-saves the same content
+	assert.equal(await rt.checkAll(), 0);
+	assert.equal(settings.tabletSent["smith2020.pdf"].vaultHash, sent.vaultHash, "baseline unchanged");
+	tabletWrite(path.join(tablet, "smith2020.pdf"), HIGHLIGHTED);
+	assert.equal(await rt.checkAll(), 0, "later: nothing replaced");
+	assert.equal(ui.conflicts.length, 1, "seen as a conflict, not a plain return");
+	assert.deepEqual(bytesOf(app, file), VAULT_EDIT);
+	void note;
+});
+
+test("a tablet file that never stops changing is left for later", async () => {
+	let tick = 0;
+	const { app, rt, tablet, note, file, settings } = setup({}, (host) => ({
+		...host,
+		// Every look at the file sees a new modification time: a sync that never finishes.
+		stat: async (p) => {
+			const st = await host.stat(p);
+			return st && p.endsWith("smith2020.pdf") ? { ...st, mtimeMs: st.mtimeMs + ++tick } : st;
+		},
+	}));
+	await rt.send(note);
+	const before = { ...settings.tabletSent["smith2020.pdf"] };
+	tabletWrite(path.join(tablet, "smith2020.pdf"), HIGHLIGHTED);
+	assert.equal(await rt.checkAll(), 0);
+	assert.deepEqual(bytesOf(app, file), CLEAN);
+	assert.equal(settings.tabletSent["smith2020.pdf"].externalHash, before.externalHash, "still waiting for the return");
+});
+
+test("a returned copy PDF.js can't open never replaces the vault copy", async () => {
+	const { app, rt, tablet, note, file, ui } = setup();
+	await rt.send(note);
+	tabletWrite(path.join(tablet, "smith2020.pdf"), new TextEncoder().encode("%PDF-1.7\npartial syncing data"));
+	assert.equal(await rt.checkAll(), 0);
+	assert.deepEqual(bytesOf(app, file), CLEAN);
+	assert.ok(ui.notices.some((n) => /isn't a readable PDF yet/.test(n)), ui.notices.join("\n"));
+	// Once the full file arrives it comes back normally.
+	tabletWrite(path.join(tablet, "smith2020.pdf"), HIGHLIGHTED);
+	assert.equal(await rt.checkAll(), 1);
+	assert.deepEqual(bytesOf(app, file), HIGHLIGHTED);
+});
+
+test("a vault change while the conflict dialog is open is never lost", async () => {
+	const NEWEST = ONE_HIGHLIGHT;
+	for (const choice of ["tablet", "vault"] as const) {
+		const { app, rt, tablet, note, file, ui } = setup();
+		ui.choice = choice;
+		await rt.send(note);
+		await app.vault.modifyBinary(file, toArrayBuffer(VAULT_EDIT));
+		tabletWrite(path.join(tablet, "smith2020.pdf"), HIGHLIGHTED);
+		ui.whileOpen = async () => {
+			await app.vault.modifyBinary(file, toArrayBuffer(NEWEST)); // saved in PDF++ meanwhile
+		};
+		assert.equal(await rt.checkAll(), 0, choice);
+		assert.deepEqual(bytesOf(app, file), NEWEST, choice);
+		assert.equal(app.vault.getFiles().filter((f) => f.name.includes("copy")).length, 0, "nothing saved from a stale snapshot");
+		assert.ok(ui.notices.some((n) => /changed in the vault while you were deciding/.test(n)));
+		// Asked again with the current copies.
+		ui.whileOpen = async () => undefined;
+		ui.choice = "later";
+		await rt.checkAll();
+		assert.equal(ui.conflicts.length, 2);
+		assert.equal(ui.conflicts[1].vault.annotations, 1);
+	}
+});
+
+test("a vault change while the pre-extraction command runs is never overwritten", async () => {
+	const NEWEST = ONE_HIGHLIGHT;
+	let appRef: App | null = null;
+	let fileRef: TFile | null = null;
+	const { app, rt, tablet, note, file, settings, ui } = setup({}, (host, a) => {
+		appRef = a;
+		return {
+			...host,
+			run: async (cmd, cwd, timeout) => {
+				await appRef!.vault.modifyBinary(fileRef!, toArrayBuffer(NEWEST));
+				return host.run(cmd, cwd, timeout);
+			},
+		};
+	});
+	fileRef = file;
+	settings.preExtractionCommand = `node -e "require('fs').copyFileSync(process.argv[1], process.argv[2])" {in} {out}`;
+	await rt.send(note);
+	tabletWrite(path.join(tablet, "smith2020.pdf"), HIGHLIGHTED);
+	assert.equal(await rt.checkAll(), 0);
+	assert.deepEqual(bytesOf(app, file), NEWEST);
+	assert.ok(ui.notices.some((n) => /changed in the vault while it was being brought back/.test(n)));
+});
+
+test("after a vault rename, the record stays under the tablet name through several returns", async () => {
+	const { app, rt, tablet, note, file, settings, ui } = setup();
+	await rt.send(note);
+	await app.fileManager.renameFile(file, "References/attachments/renamed.pdf");
+	await rt.onVaultRename(file, PDF);
+	await app.fileManager.processFrontMatter(note, (f: any) => (f.pdf = "[[renamed.pdf]]"));
+	await flush();
+	tabletWrite(path.join(tablet, "smith2020.pdf"), HIGHLIGHTED);
+	assert.equal(await rt.checkAll(), 1);
+	assert.deepEqual(Object.keys(settings.tabletSent), ["smith2020.pdf"]);
+	tabletWrite(path.join(tablet, "smith2020.pdf"), ONE_HIGHLIGHT);
+	assert.equal(await rt.checkAll(), 1, "second return is a plain return");
+	assert.equal(ui.conflicts.length, 0);
+	assert.deepEqual(bytesOf(app, file), ONE_HIGHLIGHT);
+	// Sending again uses the same tablet name.
+	await app.vault.modifyBinary(file, toArrayBuffer(CLEAN));
+	tabletWrite(path.join(tablet, "smith2020.pdf"), ONE_HIGHLIGHT); // unchanged content, so it can be replaced
+	assert.match(await rt.send(note), /smith2020\.pdf/);
+	assert.ok(!fs.existsSync(path.join(tablet, "renamed.pdf")));
+});
+
+test("extraction writes nothing once the plugin is unloaded", async () => {
+	const { app, library, settings, note, file } = setup();
+	let alive = true;
+	const extractor = new Extractor(app as any, library, () => settings, () => alive);
+	app.vault.contents.set(file, toArrayBuffer(HIGHLIGHTED));
+	const before = content(app, note);
+	const run = extractor.extract(note);
+	alive = false; // disabled while PDF.js reads the file
+	await assert.rejects(run, (e: unknown) => e instanceof Cancelled);
+	await flush();
+	assert.equal(content(app, note), before);
+	assert.equal(fm(app, note).highlights, undefined);
 });
