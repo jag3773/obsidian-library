@@ -108,6 +108,18 @@ test("mergeBody adds only paragraphs the kept note lacks, with their heading, ou
 	assert.equal(mergeBody(keep, keep, { dropName: "x", annotationsHeading: "## Annotations" }).body, keep);
 });
 
+test("mergeBody copies fenced code blocks whole, '#' lines inside them included", () => {
+	const keep = "# Title\n\nShared.\n";
+	const fenced = "```python\n# comment\n\nx = 1\n\n## another comment\n```";
+	const tilde = "~~~\n# shell comment\n\n## not a heading\n~~~";
+	const drop = `# Title\n\nShared.\n\n## Code\n\n${fenced}\n\n${tilde}\n`;
+	const r = mergeBody(keep, drop, { dropName: "b", annotationsHeading: "## Annotations" });
+	assert.equal(r.paragraphsAdded, 2);
+	assert.equal(r.body, `${keep}\n## Merged from b\n\n### Code\n\n${fenced}\n\n${tilde}\n`);
+	// Merging again adds nothing: the blocks match whole.
+	assert.equal(mergeBody(r.body, drop, { dropName: "b", annotationsHeading: "## Annotations" }).body, r.body);
+});
+
 test("splitNote separates frontmatter from the body", () => {
 	assert.deepEqual(splitNote("---\na: 1\n---\nBody"), { frontmatter: "---\na: 1\n---\n", body: "Body" });
 	assert.deepEqual(splitNote("Body only"), { frontmatter: "", body: "Body only" });

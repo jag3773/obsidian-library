@@ -234,11 +234,35 @@ export function splitNote(text: string): { frontmatter: string; body: string } {
 	return m ? { frontmatter: m[0], body: text.slice(m[0].length) } : { frontmatter: "", body: text };
 }
 
-const paragraphs = (s: string) =>
-	s
-		.split(/\r?\n[ \t]*\r?\n/)
-		.map((p) => p.replace(/^\s*\n|\s+$/g, ""))
-		.filter((p) => p.trim());
+const FENCE = /^ {0,3}(`{3,}|~{3,})/;
+
+/**
+ * Blocks separated by blank lines. A fenced code block is never split, so its blank lines
+ * and "#" lines stay inside it; a fence left open runs to the end, as in CommonMark.
+ */
+function paragraphs(s: string): string[] {
+	const out: string[] = [];
+	let lines: string[] = [];
+	let fence = "";
+	const flush = () => {
+		const p = lines.join("\n").replace(/^\s*\n|\s+$/g, "");
+		if (p.trim()) out.push(p);
+		lines = [];
+	};
+	for (const line of s.split("\n")) {
+		const f = line.match(FENCE)?.[1];
+		if (fence) {
+			if (f && f[0] === fence[0] && f.length >= fence.length && !line.slice(line.indexOf(f) + f.length).trim()) fence = "";
+		} else if (f) fence = f;
+		else if (!line.trim()) {
+			flush();
+			continue;
+		}
+		lines.push(line);
+	}
+	flush();
+	return out;
+}
 const norm = (p: string) => p.replace(/\s+/g, " ").trim();
 /** The annotation markers as paragraph breaks, so they never join the text beside them. */
 const withoutMarkers = (s: string) => s.split(START_MARKER).join("\n\n").split(END_MARKER).join("\n\n");
