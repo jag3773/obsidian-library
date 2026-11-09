@@ -27,6 +27,15 @@ export class FullText {
 		return asText(this.library.frontmatter(note)[this.library.prop("pdf")]).trim();
 	}
 
+	/** The DOI (normalized) and URL the search is made with. */
+	private identity(note: TFile): { doi?: string; url?: string } {
+		const fm = this.library.frontmatter(note);
+		return {
+			doi: normalizeDoi(asText(fm[this.library.prop("doi")])) ?? undefined,
+			url: asText(fm[this.library.prop("url")]).trim() || undefined,
+		};
+	}
+
 	/** Find, confirm, download and attach. Returns the new attachment, or null. */
 	async find(note: TFile): Promise<TFile | null> {
 		const existing = this.existingPdf(note);
@@ -34,9 +43,7 @@ export class FullText {
 			new Notice(`Stacks: ${note.basename} already has a PDF (${existing}). Remove its ${this.library.prop("pdf")} property first to look for another.`);
 			return null;
 		}
-		const fm = this.library.frontmatter(note);
-		const doi = normalizeDoi(asText(fm[this.library.prop("doi")])) ?? undefined;
-		const url = asText(fm[this.library.prop("url")]).trim() || undefined;
+		const { doi, url } = this.identity(note);
 		const email = this.settings().crossrefMailto.trim();
 		if (!doi && !url) {
 			new Notice(`Stacks: ${note.basename} has no DOI or URL to look for a PDF with.`);
@@ -74,6 +81,12 @@ export class FullText {
 		return this.library.exclusive(async () => {
 			// The note may have been deleted, or given a PDF, while this downloaded.
 			if (!this.library.exists(note)) return null;
+			// Or moved out of the references folder, or given another DOI or URL.
+			const current = this.identity(note);
+			if (!this.library.isReference(note) || current.doi !== doi || current.url !== url) {
+				new Notice(`Stacks: ${note.basename} changed while the PDF downloaded; the download was not saved.`);
+				return null;
+			}
 			const now = this.existingPdf(note);
 			if (now) {
 				new Notice(`Stacks: ${note.basename} got a PDF (${now}) meanwhile; the download was not saved.`);

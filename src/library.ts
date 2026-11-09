@@ -138,7 +138,7 @@ export class Library {
 	 * Throw Cancelled if the plugin was unloaded. exclusive() checks once on entry; writers
 	 * call this again after any await, right before touching the vault.
 	 */
-	private assertActive(): void {
+	assertActive(): void {
 		if (!this.active()) throw new Cancelled();
 	}
 

@@ -3,7 +3,7 @@
  * the citation text inserted ([[key]], [@key] or both), adding a key to a Pandoc citation
  * already at the cursor, and finding the citekeys a draft cites. Nothing here imports Obsidian.
  */
-import { familyOf, namesFromProperty } from "./names";
+import { displayName, familyOf, namesFromProperty } from "./names";
 import { PropertyKey } from "./properties";
 import { asText } from "./text";
 
@@ -22,6 +22,8 @@ export interface CiteRef {
 	title: string;
 	/** Family names (or an organization's name), joined with ", ". */
 	authors: string;
+	/** Full creator names ("Jane Doe"), joined with ", ", so given names are searchable too. */
+	creators?: string;
 	year: string;
 	path: string;
 }
@@ -36,9 +38,11 @@ export function citeRef(fm: Record<string, unknown>, p: Record<PropertyKey, stri
 	const key = plain(fm[p.citekey]);
 	if (!key) return undefined;
 	const people = namesFromProperty(fm[p.authors]);
-	const names = (people.length ? people : namesFromProperty(fm[p.editors])).map(familyOf).filter(Boolean);
+	const creators = people.length ? people : namesFromProperty(fm[p.editors]);
+	const names = creators.map(familyOf).filter(Boolean);
+	const full = creators.map(displayName).filter(Boolean);
 	const year = plain(fm[p.year]) || (plain(fm[p.published]).match(/^\d{4}/)?.[0] ?? "");
-	return { key, title: plain(fm[p.title]), authors: names.join(", "), year, path };
+	return { key, title: plain(fm[p.title]), authors: names.join(", "), creators: full.join(", "), year, path };
 }
 
 /** Lowercase, without accents, so "garcia" finds "García". */
@@ -57,7 +61,8 @@ export function scoreRef(ref: CiteRef, query: string): number | undefined {
 	const words = fold(query).split(/\s+/).filter(Boolean);
 	if (!words.length) return 0;
 	const key = fold(ref.key);
-	const authors = fold(ref.authors);
+	// Surnames for display, plus full names so "Jane" or "Jane Doe" finds Jane Doe.
+	const authors = fold(ref.creators ? `${ref.authors}; ${ref.creators}` : ref.authors);
 	const title = fold(ref.title);
 	let score = 0;
 	for (const w of words) {
