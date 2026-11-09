@@ -20,7 +20,59 @@ export interface FoundLink {
 }
 
 const WIKI = /(!?)\[\[([^\]\n]+?)\]\]/g;
-const MARKDOWN = /(!?)\[([^\]\n]*)\]\(([^)\n]+)\)/g;
+/** A Markdown link up to the "(" that opens its destination; parseDestination reads the rest. */
+const MARKDOWN = /(!?)\[([^\]\n]*)\]\(/g;
+const PUNCT = /[!-/:-@[-`{-~]/;
+
+/**
+ * A Markdown link's destination and optional title, read from just after "(" by CommonMark's
+ * rules (on one line): `<…>`, or a run without spaces whose parentheses balance or are
+ * escaped. Returns the destination with escapes removed and the offset after the closing ")",
+ * or null when the text isn't a link.
+ */
+function parseDestination(text: string, from: number): { dest: string; end: number } | null {
+	let i = from;
+	const skipSpace = () => {
+		while (text[i] === " " || text[i] === "\t") i++;
+	};
+	skipSpace();
+	let dest = "";
+	if (text[i] === "<") {
+		for (i++; text[i] !== ">"; i++) {
+			const c = text[i];
+			if (c === undefined || c === "\n" || c === "<") return null;
+			if (c === "\\" && PUNCT.test(text[i + 1] ?? "")) i++;
+			dest += text[i];
+		}
+		i++;
+	} else {
+		let depth = 0;
+		for (; i < text.length && !/\s/.test(text[i]); i++) {
+			const c = text[i];
+			if (c === "\\" && PUNCT.test(text[i + 1] ?? "")) {
+				dest += text[++i];
+				continue;
+			}
+			if (c === "(") depth++;
+			else if (c === ")" && depth-- === 0) break;
+			dest += c;
+		}
+		if (depth > 0) return null;
+	}
+	const afterDest = i;
+	skipSpace();
+	const open = text[i];
+	if (i > afterDest && (open === '"' || open === "'" || open === "(")) {
+		const close = open === "(" ? ")" : open;
+		for (i++; text[i] !== close; i++) {
+			if (text[i] === undefined || text[i] === "\n" || (open === "(" && text[i] === "(")) return null;
+			if (text[i] === "\\") i++;
+		}
+		i++;
+		skipSpace();
+	}
+	return text[i] === ")" ? { dest, end: i + 1 } : null;
+}
 
 /** Replace the contents of fenced code blocks and inline code with spaces, keeping offsets. */
 function maskCode(text: string): string {
@@ -54,12 +106,16 @@ export function findLinks(text: string): FoundLink[] {
 		const { target, subpath } = splitSubpath(path);
 		out.push({ start, end: start + original.length, original, kind: "wiki", embed: !!m[1], target: target.trim(), subpath, display });
 	}
+	let lastEnd = 0;
 	for (const m of masked.matchAll(MARKDOWN)) {
 		const start = m.index ?? 0;
-		const original = text.slice(start, start + m[0].length);
-		// Inside a wikilink's alias ("[[a|[b](c)]]") is not a link of its own.
-		if (out.some((w) => start >= w.start && start < w.end)) continue;
-		const dest = original.slice(original.lastIndexOf("(") + 1, -1).trim().replace(/^<(.*)>$/, "$1").split(/\s+"/)[0];
+		// Inside a wikilink's alias ("[[a|[b](c)]]") or an earlier link's title is not a link of its own.
+		if (start < lastEnd || out.some((w) => start >= w.start && start < w.end)) continue;
+		const parsed = parseDestination(masked, start + m[0].length);
+		if (!parsed) continue;
+		lastEnd = parsed.end;
+		const original = text.slice(start, parsed.end);
+		const dest = parsed.dest;
 		if (!dest || /^[a-z][a-z0-9+.-]*:/i.test(dest)) continue;
 		let decoded = dest;
 		try {

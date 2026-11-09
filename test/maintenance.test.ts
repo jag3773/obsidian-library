@@ -118,6 +118,17 @@ test("merge refuses when a note was deleted after the preview", async () => {
 	await assert.rejects(maintenance.merge(plan), /moved or deleted/);
 });
 
+test("merge repoints a Markdown link whose filename has parentheses", async () => {
+	const { app, maintenance } = setup();
+	const keep = app.vault.addFile("References/smith2020.md", md({ citekey: "smith2020", doi: "10.1000/x" }));
+	const drop = app.vault.addFile("References/Smith (2020).md", md({ citekey: "smith2020b", doi: "10.1000/x" }));
+	const draft = app.vault.addFile("Drafts/essay.md", "See [Smith](References/Smith%20(2020).md).\n");
+	const plan = await maintenance.planMerge(keep, drop);
+	assert.deepEqual(plan.links.map((l) => [l.file.path, l.count]), [["Drafts/essay.md", 1]]);
+	assert.deepEqual(await maintenance.merge(plan), { linksChanged: 1, filesChanged: 1 });
+	assert.equal(await app.vault.read(draft), "See [Smith](smith2020.md).\n");
+});
+
 test("merge reads the dropped note's properties fresh, and stops if it changed since the preview", async () => {
 	const { app, maintenance } = setup();
 	const keep = app.vault.addFile("References/a.md", md({ citekey: "a", doi: "10.1000/x" }, "Body.\n"));
