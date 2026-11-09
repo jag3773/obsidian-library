@@ -5,6 +5,8 @@ export interface Found {
 	title?: string;
 	/** Display names, "First Last" order. */
 	authors?: string[];
+	/** Other people credited (editors, translators): used only if no layer names authors. */
+	contributors?: string[];
 	/** ISO date: YYYY-MM-DD, YYYY-MM or YYYY. */
 	date?: string;
 	publisher?: string;

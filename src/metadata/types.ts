@@ -15,6 +15,8 @@ export interface ReferenceData {
 	doi?: string;
 	url?: string;
 	abstract?: string;
+	/** True when `authors` are only contributors (editors, translators) standing in for an author. */
+	contributorsOnly?: boolean;
 	/** Where the data came from, for messages. */
 	source: string;
 }

@@ -65,7 +65,7 @@ export class Inbox {
 			}
 			// The clip keeps the URL property it came from, so later captures of the same original
 			// URL still match after the mapped url becomes the canonical one.
-			const moved = await this.library.complete(file, basis, s.clipStatus, [url], !!data);
+			const moved = await this.library.complete(file, basis, s.clipStatus, [url], data ? fm : undefined);
 			new Notice(`Library: filed ${moved.basename}`);
 			return moved;
 		});

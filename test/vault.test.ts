@@ -585,3 +585,33 @@ test("clip authors are read from lists, [[links]] with aliases, or a plain name"
 	assert.equal(fromClip({ published: "2021-05-04" }, props, "x").date, "2021-05-04");
 	assert.equal(fromClip({}, props, "Fallback").title, "Fallback");
 });
+
+// PR #34 review: edits made while the lookup is in flight are the user's.
+test("edits made to a clip while its lookup is pending are kept", async () => {
+	const { app, inbox } = setup();
+	const url = "https://news.example/story";
+	const clip = app.vault.addFile("Inbox/s.md", `---\n${JSON.stringify({ source: url, title: "Clipper Title", abstract: "Clipper summary…", journal: "Clipper Site" })}\n---\n`);
+	let release!: () => void;
+	const gate = new Promise<void>((r) => (release = r));
+	http.handler = async () => {
+		await gate;
+		return {
+			status: 200,
+			text: `<script type="application/ld+json">{"@type":"NewsArticle","headline":"Remote Title","description":"Remote summary.","isPartOf":{"@type":"WebSite","name":"Remote Site"},"author":{"@type":"Person","name":"Ana Lima"}}</script>`,
+		};
+	};
+	const done = inbox.process(clip);
+	await flush();
+	await app.fileManager.processFrontMatter(clip, (fm: Record<string, unknown>) => {
+		fm.title = "My Title";
+		fm.abstract = "My summary";
+	});
+	release();
+	assert.ok(await done);
+	await flush();
+	const props = fm(app, clip);
+	assert.equal(props.title, "My Title");
+	assert.equal(props.abstract, "My summary");
+	assert.equal(props.journal, "Remote Site", "an untouched clipper value is still replaced");
+	assert.deepEqual(props.authors, ["[[Ana Lima]]"]);
+});

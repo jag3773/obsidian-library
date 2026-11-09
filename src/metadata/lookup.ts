@@ -27,9 +27,10 @@ async function firstOf(...tries: (() => Promise<ReferenceData | null>)[]): Promi
 /** page with each empty field taken from more. */
 function fillGaps(page: ReferenceData, more: ReferenceData): ReferenceData {
 	const out = { ...page };
-	if (!out.authors.length && more.authors.length) {
+	if ((!out.authors.length || out.contributorsOnly) && more.authors.length && !more.contributorsOnly) {
 		out.authors = more.authors;
 		out.familyNames = more.familyNames;
+		delete out.contributorsOnly;
 	}
 	if (!out.date && more.date) {
 		out.date = more.date;
@@ -49,10 +50,11 @@ export async function lookup(fetch: Fetcher, id: Identifier, opts: LookupOptions
 				() => lookupOpenLibrary(fetch, id.value),
 				() => lookupGoogleBooks(fetch, id.value)
 			);
-			// Open Library rarely has abstracts; borrow Google's when available.
-			if (r && !r.abstract && r.source === "Open Library") {
+			// Open Library records are often sparse (no description, sometimes no authors or
+			// date); fill what it lacks from Google Books, keeping Open Library's own values.
+			if (r && r.source === "Open Library" && (!r.abstract || !r.authors.length || !r.date || !r.publisher)) {
 				const g = await firstOf(() => lookupGoogleBooks(fetch, id.value));
-				if (g?.abstract) r.abstract = g.abstract;
+				if (g) return fillGaps(r, g);
 			}
 			return r;
 		}
@@ -73,7 +75,7 @@ export async function lookup(fetch: Fetcher, id: Identifier, opts: LookupOptions
 			}
 			// A book page (a store, Goodreads) often lacks a date, publisher or description that
 			// the ISBN's catalog record has. The page's own values win; the record fills gaps.
-			if (page?.isbn && (!page.authors.length || !page.date || !page.publisher || !page.abstract)) {
+			if (page?.isbn && (!page.authors.length || page.contributorsOnly || !page.date || !page.publisher || !page.abstract)) {
 				const book = await lookup(fetch, { kind: "isbn", value: page.isbn }, opts);
 				if (book) return fillGaps(page, book);
 			}

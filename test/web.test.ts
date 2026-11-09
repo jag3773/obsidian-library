@@ -6,7 +6,8 @@ import { parseDate } from "../src/metadata/dates";
 import { parseGitHubRepo } from "../src/metadata/github";
 import { lookup } from "../src/metadata/lookup";
 import { Fetcher } from "../src/metadata/http";
-import { parseWebpage } from "../src/metadata/webpage";
+import { META_LIMITS, parseWebpage, readMeta } from "../src/metadata/webpage";
+import { parseHtml } from "../src/metadata/html";
 
 const fixture = (name: string) => readFileSync(`test/fixtures/web/${name}`, "utf8");
 
@@ -286,4 +287,68 @@ test("a page that is only a schema.org WebPage takes its type from og:type", () 
 	const r = parseWebpage(html, "https://mnn.example/a");
 	assert.equal(r.type, "article");
 	assert.equal(r.date, "2023-05-25");
+});
+
+// PR #34 review --------------------------------------------------------------------------
+
+test("a page flooded with meta tags is read in bounded time and memory", () => {
+	const html = `<html><head><meta property="og:title" content="Real">${'<meta name="author" content="A">'.repeat(120_000)}</head></html>`;
+	const doc = parseHtml(html);
+	const started = Date.now();
+	const meta = readMeta(doc);
+	const elapsed = Date.now() - started;
+	assert.equal(meta.get("author")?.length, META_LIMITS.perKey);
+	assert.ok(elapsed < 500, `readMeta took ${elapsed} ms`);
+	assert.equal(parseWebpage(html, "https://x.example/").title, "Real");
+});
+
+test("Yoast-style linked graph: author, publisher and site resolved by @id", () => {
+	const html = `<script type="application/ld+json">{"@context":"https://schema.org","@graph":[
+		{"@type":"Article","@id":"#article","headline":"Linked","author":{"@id":"#author"},"publisher":{"@id":"#publisher"},"isPartOf":{"@id":"#website"},"datePublished":"2022-02-02"},
+		{"@type":"Person","@id":"#author","name":"Ana Lima","author":{"@id":"#author"}},
+		{"@type":"Organization","@id":"#publisher","name":"Example Media"},
+		{"@type":"WebSite","@id":"#website","name":"Example Site","isPartOf":{"@id":"#article"}}]}</script>`;
+	const r = parseWebpage(html, "https://y.example/a");
+	assert.deepEqual(r.authors, ["Ana Lima"]);
+	assert.equal(r.publisher, "Example Media");
+	assert.equal(r.journal, "Example Site");
+});
+
+test("an Amazon byline with only a translator doesn't beat the page's real author", () => {
+	const byline = `<span id="productTitle">Ficciones</span><div id="bylineInfo"><span class="author"><a class="a-link-normal" href="#">Ana Translator</a><span class="contribution">(Translator)</span></span></div>`;
+	const withLd = byline + `<script type="application/ld+json">{"@type":"Book","name":"Ficciones","author":{"name":"Real Author"}}</script>`;
+	assert.deepEqual(parseWebpage(withLd, "https://www.amazon.com/dp/x").authors, ["Real Author"]);
+	const alone = parseWebpage(byline, "https://www.amazon.com/dp/x");
+	assert.deepEqual(alone.authors, ["Ana Translator"], "with nothing else, the contributor stands in");
+	assert.equal(alone.contributorsOnly, true);
+});
+
+test("a translator-only Amazon page takes the author from the ISBN's record", async () => {
+	const html = `<span id="productTitle">Ficciones</span><div id="bylineInfo"><span class="author"><a class="a-link-normal" href="#">Ana Translator</a><span class="contribution">(Translator)</span></span></div>
+		<div id="rpi-attribute-book_details-isbn13"><div class="rpi-attribute-value"><span>978-0593135204</span></div></div>`;
+	const fetch = serve({
+		"https://www.amazon.com/dp/x": { text: html },
+		"https://openlibrary.org/": { text: JSON.stringify({ "ISBN:9780593135204": { title: "F", authors: [{ name: "Jorge Luis Borges" }], publish_date: "1962" } }) },
+	});
+	const r = await lookup(fetch, { kind: "url", value: "https://www.amazon.com/dp/x" });
+	assert.deepEqual(r?.authors, ["Jorge Luis Borges"]);
+	assert.deepEqual(r?.familyNames, ["Borges"]);
+	assert.equal(r?.contributorsOnly, undefined);
+});
+
+test("a sparse Open Library record is completed from Google Books, keeping the page's values", async () => {
+	const html = `<script type="application/ld+json">{"@type":"Book","name":"Page Title","isbn":"9780593135204"}</script>`;
+	const fetch = serve({
+		"https://books.example/b": { text: html },
+		"https://openlibrary.org/": { text: JSON.stringify({ "ISBN:9780593135204": { title: "OL title" } }) },
+		"https://www.googleapis.com/": {
+			text: JSON.stringify({ items: [{ volumeInfo: { title: "G", authors: ["Andy Weir"], publishedDate: "2021-05-04", publisher: "Ballantine", description: "Desc." } }] }),
+		},
+	});
+	const r = await lookup(fetch, { kind: "url", value: "https://books.example/b" });
+	assert.equal(r?.title, "Page Title");
+	assert.deepEqual(r?.authors, ["Andy Weir"]);
+	assert.equal(r?.date, "2021-05-04");
+	assert.equal(r?.publisher, "Ballantine");
+	assert.equal(r?.abstract, "Desc.");
 });

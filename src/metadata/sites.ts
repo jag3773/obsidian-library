@@ -50,7 +50,9 @@ const amazon: Site = (doc) => {
 		type: isBook ? "book" : undefined,
 		// Drop format tags such as "[Paperback]" or "(Kindle Edition)".
 		title: title?.replace(/(?:\s*[([](?:Paperback|Hardcover|Kindle Edition|Mass Market Paperback|Audio CD|eBook)[)\]])+$/i, ""),
-		authors: (writers.length ? writers : named).map((p) => p.name),
+		// Without an author in the byline, later layers (JSON-LD, the ISBN's record) may have one.
+		authors: writers.map((p) => p.name),
+		contributors: named.map((p) => p.name),
 		date: parseDate(rpi("publication_date") ?? details.get("publication date") ?? publisherRow?.match(/\(([^)]*\d{4}[^)]*)\)/)?.[1]),
 		publisher: publisher || undefined,
 		isbn,

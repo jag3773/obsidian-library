@@ -8,15 +8,23 @@ import { readJsonLd } from "./jsonld";
 import { siteLayer } from "./sites";
 import { ReferenceData } from "./types";
 
+/** Limits that keep a hostile page from stalling Obsidian, far above what real pages use. */
+export const META_LIMITS = { tags: 2000, perKey: 50 };
+
 /** <meta> tags as a multimap keyed by lower-cased name, property or itemprop. */
 export function readMeta(doc: Document): Map<string, string[]> {
 	const out = new Map<string, string[]>();
-	for (const m of Array.from(doc.querySelectorAll("meta"))) {
+	const tags = doc.getElementsByTagName("meta");
+	const n = Math.min(tags.length, META_LIMITS.tags);
+	for (let i = 0; i < n; i++) {
+		const m = tags[i];
 		const key = m.getAttribute("name") ?? m.getAttribute("property") ?? m.getAttribute("itemprop");
 		const content = m.getAttribute("content");
 		if (!key || content === null) continue;
 		const k = key.toLowerCase();
-		out.set(k, [...(out.get(k) ?? []), content]);
+		const list = out.get(k);
+		if (!list) out.set(k, [content]);
+		else if (list.length < META_LIMITS.perKey) list.push(content);
 	}
 	return out;
 }
@@ -132,12 +140,14 @@ export function parseWebpage(html: string, url: string): ReferenceData {
 	} catch {
 		/* keep empty */
 	}
-	const authors = found.authors ?? [];
+	// Contributors (a translator, an editor) only stand in when no source names an author.
+	const authors = found.authors ?? found.contributors ?? [];
 	return {
 		type: found.type ?? (VIDEO_HOSTS.test(host) ? "video" : "webpage"),
 		title: found.title ?? url,
 		authors,
 		familyNames: authors.map(familyFromFullName),
+		contributorsOnly: !found.authors?.length && !!found.contributors?.length ? true : undefined,
 		date: found.date,
 		year: yearOf(found.date),
 		journal: found.type === "book" ? undefined : found.journal,

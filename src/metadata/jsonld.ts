@@ -30,14 +30,14 @@ function types(o: Obj): string[] {
 export function jsonLdObjects(doc: Document): Obj[] {
 	const out: Obj[] = [];
 	const visit = (v: unknown, depth: number) => {
-		if (depth > 4) return;
+		if (depth > 4 || out.length >= 500) return;
 		for (const x of list(v)) {
 			if (!isObj(x)) continue;
 			if (x["@graph"]) visit(x["@graph"], depth + 1);
 			if (x["@type"]) out.push(x);
 		}
 	};
-	for (const s of Array.from(doc.querySelectorAll('script[type="application/ld+json"]'))) {
+	for (const s of Array.from(doc.querySelectorAll('script[type="application/ld+json"]')).slice(0, 50)) {
 		try {
 			visit(JSON.parse(s.textContent ?? ""), 0);
 		} catch {
@@ -92,7 +92,8 @@ function resolve(item: Obj, objs: Obj[]): Obj {
 	const byId = new Map(objs.filter((o) => typeof o["@id"] === "string").map((o) => [o["@id"] as string, o]));
 	const deref = (v: unknown) => list(v).map((x) => (isObj(x) && !str(x.name) && typeof x["@id"] === "string" ? byId.get(x["@id"]) ?? x : x));
 	const out = { ...item };
-	for (const k of ["author", "creator", "publisher"]) if (out[k] !== undefined) out[k] = deref(out[k]);
+	// One level only: a resolved node's own references are left alone, so cycles can't loop.
+	for (const k of ["author", "creator", "publisher", "isPartOf"]) if (out[k] !== undefined) out[k] = deref(out[k]);
 	return out;
 }
 
@@ -130,7 +131,7 @@ function fromItem(o: Obj): Found {
 		authors: people(o.author ?? o.creator).map((a) => clean(a) ?? a),
 		date: parseDate(str(o.datePublished) ?? str(o.dateCreated) ?? str(o.releasedate) ?? str(o.uploadDate) ?? str(o.copyrightYear)),
 		publisher: clean(str(o.publisher)),
-		journal: clean(str((isObj(o.isPartOf) ? o.isPartOf : undefined)?.name)),
+		journal: clean(str(list(o.isPartOf).find(isObj)?.name)),
 		isbn: isbnOf(o),
 		doi: doiOf(o),
 		url: str(o.url),
