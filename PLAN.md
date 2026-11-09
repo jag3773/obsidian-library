@@ -72,7 +72,7 @@ All paths are vault-relative unless marked absolute. "Example (ekfocus)" shows t
 | Process inbox automatically | on | on | React to new files in the inbox folder |
 | Complete notes on property edit | on | on | A note in the references folder with an ISBN, DOI or URL and no citekey gets filled in and renamed |
 | URL properties in clipped notes | `url, source` | `url, source` | Where to look for the URL in Web Clipper output |
-| Crossref contact email | empty | user's choice | Sent as `mailto` for Crossref's polite pool; never filled by default |
+| Contact email | empty | user's choice | Sent as `mailto` for Crossref's polite pool, and to Unpaywall (which requires it) when Find PDF runs; never filled by default |
 | Library base | empty | `Library.base` | The base that shows the library. Its `file.inFolder()` sets the references folder; its properties (and those on notes in that folder) are matched to the fields below |
 | Fields | logical names | matched from the base | Map of logical → real property names (section 3), chosen from the base's properties in dropdowns |
 
@@ -142,7 +142,12 @@ Metadata sources (no API keys):
 | ISBN | Open Library (`/api/books?jscmd=data`) | Google Books volumes API |
 | DOI | Crossref `/works/{doi}` | doi.org CSL-JSON content negotiation |
 | arXiv | arXiv export API | — |
-| URL | Page `<meta>` tags: Highwire `citation_*`, Open Graph, Dublin Core, `<title>` | If the page has `citation_doi`, use Crossref |
+| PMID | NCBI E-utilities `esummary` (JSON) | Crossref when the record names a DOI; PubMed fills its gaps |
+| URL | Page `<meta>` tags: Highwire `citation_*`, Open Graph, Dublin Core, `<title>`; COinS when the page's one span describes it | If the page has `citation_doi`, use Crossref; `citation_pmid`, E-utilities. PubMed URLs go to E-utilities directly |
+
+Web Clipper is the primary handoff for web pages; docs/web-clipper.md lists the properties it should write and a template. A clip's `doi` is looked up when the page lookup finds none.
+
+Find PDF (#24, manual only): **Find PDF for current reference** asks Unpaywall (DOI plus the contact email) and the landing page (`citation_pdf_url`), shows the sources with Unpaywall's host type and version, downloads the chosen one after confirmation, checks the content type and `%PDF-` signature, and attaches it with the normal naming rules, never replacing a file. Pure parts in `src/metadata/fulltext.ts`, vault side in `src/fulltext.ts`. See docs/find-pdf.md.
 
 All requests go through Obsidian's `requestUrl`, which works on mobile and avoids CORS.
 
@@ -197,7 +202,7 @@ Design rules:
 
 ## 7. Privacy
 
-The plugin sends identifiers (ISBN, DOI, arXiv ID, URL) to the public services in section 5 and nothing else. No telemetry, no note content, no API keys. The Crossref contact email is only sent when the user sets it.
+The plugin sends identifiers (ISBN, DOI, arXiv ID, PMID, URL) to the public services in section 5 (including NCBI E-utilities for PubMed) and nothing else. No telemetry, no note content, no API keys. The contact email is only sent when the user sets it: to Crossref with lookups, and to Unpaywall only when the user runs Find PDF.
 
 ## 8. Release
 

@@ -12,7 +12,7 @@ export class AddReferenceModal extends Modal {
 		const { contentEl } = this;
 		this.setTitle("Add reference");
 		contentEl.createEl("p", {
-			text: "Paste an ISBN, DOI, arXiv ID or URL.",
+			text: "Paste an ISBN, DOI, arXiv ID, PubMed ID (PMID: 12345678) or URL.",
 			cls: "setting-item-description",
 		});
 		const submit = () => {

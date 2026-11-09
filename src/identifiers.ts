@@ -1,6 +1,6 @@
 /** Detect and normalize reference identifiers. Pure module. */
 
-export type IdentifierKind = "isbn" | "doi" | "arxiv" | "url";
+export type IdentifierKind = "isbn" | "doi" | "arxiv" | "pmid" | "url";
 
 export interface Identifier {
 	kind: IdentifierKind;
@@ -19,6 +19,18 @@ const DOI_TEXT_RE = /\b10\.\d{4,9}\/[^\s"]+/gi;
  */
 const ARXIV_RE =
 	/^(?:arxiv:\s*|https?:\/\/(?:www\.|export\.)?arxiv\.org\/(?:abs|pdf)\/)?(\d{4}\.\d{4,5}(?:v\d+)?|[a-z]+(?:-[a-z]+)*(?:\.[a-z]{2})?\/\d{7}(?:v\d+)?)(?:\.pdf)?$/i;
+
+/**
+ * PubMed IDs: "PMID: 12345678", "pmid12345678", or a PubMed record URL
+ * (pubmed.ncbi.nlm.nih.gov/12345678/, www.ncbi.nlm.nih.gov/pubmed/12345678).
+ * A bare number is not taken for a PMID.
+ */
+const PMID_RE = /^(?:pmid:?\s*|https?:\/\/(?:pubmed\.ncbi\.nlm\.nih\.gov|(?:www\.)?ncbi\.nlm\.nih\.gov\/pubmed)\/)(\d{1,9})\/?(?:[?#]\S*)?$/i;
+
+/** The PMID of a PubMed record URL, or undefined. */
+export function pubmedIdFromUrl(url: string): string | undefined {
+	return /^https?:\/\//i.test(url.trim()) ? url.trim().match(PMID_RE)?.[1] : undefined;
+}
 
 export function normalizeIsbn(raw: string): string | null {
 	const s = raw.replace(/^isbn(?:-1[03])?:?\s*/i, "").replace(/[\s-]/g, "").toUpperCase();
@@ -106,6 +118,8 @@ export function detectIdentifier(input: string): Identifier | null {
 		const doi = normalizeDoi(s);
 		if (doi) return { kind: "doi", value: doi };
 	}
+	const pmid = s.match(PMID_RE);
+	if (pmid) return { kind: "pmid", value: pmid[1] };
 	const isbn = normalizeIsbn(s);
 	if (isbn) return { kind: "isbn", value: isbn };
 	if (/^https?:\/\/\S+$/i.test(s)) return { kind: "url", value: s };
@@ -113,7 +127,7 @@ export function detectIdentifier(input: string): Identifier | null {
 	return null;
 }
 
-/** Find the first DOI or ISBN in free text, e.g. the opening pages of a PDF. */
+/** Find the first DOI, ISBN or PMID in free text, e.g. the opening pages of a PDF. */
 export function findIdentifierInText(text: string): Identifier | null {
 	for (const m of text.matchAll(DOI_TEXT_RE)) {
 		const doi = trimDoi(m[0]);
@@ -125,5 +139,7 @@ export function findIdentifierInText(text: string): Identifier | null {
 		const isbn = normalizeIsbn(m[1]);
 		if (isbn) return { kind: "isbn", value: isbn };
 	}
+	const pmid = text.match(/\bPMID:?\s*(\d{1,9})\b/);
+	if (pmid) return { kind: "pmid", value: pmid[1] };
 	return null;
 }

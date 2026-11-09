@@ -24,6 +24,8 @@ Zotero has helped researchers collect, organize, and cite their work for years. 
 
 - **Save a source by identifier.** Paste an ISBN, DOI, arXiv ID, or URL. Stacks looks up metadata, checks for an existing reference, creates a note, and opens it.
 - **Turn an inbox into a library.** Drop in a Web Clipper note or a PDF. Clipped notes are enriched and filed; what Web Clipper saved (author, published date, description) fills anything the lookup can't find, which covers sites that turn Stacks away. Looked-up values replace the guesses Web Clipper made from the page, such as its page title; the URL and status are kept. PDFs are checked for a DOI or ISBN in their opening pages, paired with a reference note, and moved into your attachments folder. When a lookup cannot identify a PDF, its document metadata or filename provides a starting point.
+- **Clip from the browser.** Obsidian Web Clipper is the main way in; see [capturing with Web Clipper](docs/web-clipper.md) for the properties Stacks reads and a template to import. PubMed records and IDs (`PMID: 12345678`) and COinS on catalog and repository pages are read too.
+- **Find an open-access PDF.** **Find PDF for current reference** checks Unpaywall and the work's landing page, shows which copy and version it found, and attaches it only after you confirm. See [Find PDF](docs/find-pdf.md).
 - **Complete a reference as you write.** Add an ISBN, DOI, or URL property to a note in your references folder. Stacks can fill missing metadata and name the note for you. Metadata enrichment preserves populated properties and the existing note body.
 - **Start with the details that matter.** References come with a title, authors, publication date (`published`), year, abstract, and, where the source has them, publisher, ISBN, or DOI. Book pages on Amazon, Goodreads, and Kobo, GitHub repositories, and news and blog articles are read the way Zotero's translators read them.
 - **Add what no lookup can find.** **New reference without a lookup** takes a type, title, authors and date and creates the note and its citekey offline: talks, interviews, older books, internal documents. **Refresh metadata** looks a reference up again and shows each changed field to accept or skip.
@@ -121,18 +123,19 @@ views:
 
 ## Metadata and privacy
 
-Stacks uses Open Library and Google Books for ISBNs, Crossref and doi.org for DOIs, arXiv for arXiv IDs, GitHub's public API for repositories, and a web page's own metadata for other URLs. No API keys are required.
+Stacks uses Open Library and Google Books for ISBNs, Crossref and doi.org for DOIs, arXiv for arXiv IDs, NCBI E-utilities (PubMed) for PMIDs and PubMed links, GitHub's public API for repositories, and a web page's own metadata for other URLs. No API keys are required. **Find PDF**, only when you run it, asks Unpaywall (with your contact email) and the work's landing page for an open-access PDF.
 
 For a web page, Stacks trusts the most specific source first:
 
 1. **Site readers** for Amazon, Goodreads, and Kobo book pages and GitHub repositories, which keep their best data outside the standard tags.
 2. **schema.org JSON-LD**, including a book's edition (`workExample`) and author references elsewhere in the page's data.
-3. **Standard tags:** Highwire `citation_*` (used by Google Scholar), Dublin Core, PRISM, and Open Graph.
-4. **The page body,** as a last resort: bylines (microdata, `rel="author"`, author-page links) and the article's `<time>`.
+3. **COinS,** when the page has one COinS span and it describes the page itself.
+4. **Standard tags:** Highwire `citation_*` (used by Google Scholar), Dublin Core, PRISM, and Open Graph.
+5. **The page body,** as a last resort: bylines (microdata, `rel="author"`, author-page links) and the article's `<time>`.
 
-A page that names a DOI is looked up through Crossref. A book page that names an ISBN gets a missing date, publisher, or description from Open Library and Google Books; the page's own values win. A bot check served in place of the page (Kobo, Cloudflare, an Amazon captcha) is recognized and ignored.
+A page that names a DOI is looked up through Crossref; a PubMed record through E-utilities, then Crossref. A book page that names an ISBN gets a missing date, publisher, or description from Open Library and Google Books; the page's own values win. A bot check served in place of the page (Kobo, Cloudflare, an Amazon captcha) is recognized and ignored.
 
-Note bodies, PDF text, and annotations are processed locally. The optional pre-extraction command runs on your computer, and the tablet round trip only copies files between your vault and a folder you choose. Lookups send the identifier or URL to the relevant service or website; identifiers discovered in a PDF may also be looked up. An optional Crossref contact email is sent only when you configure it. Stacks has no telemetry or required cloud account.
+Note bodies, PDF text, and annotations are processed locally. The optional pre-extraction command runs on your computer, and the tablet round trip only copies files between your vault and a folder you choose. Lookups send the identifier or URL to the relevant service or website; identifiers discovered in a PDF may also be looked up. An optional contact email is sent to Crossref, and to Unpaywall when you run Find PDF, only when you configure it. Stacks has no telemetry or required cloud account.
 
 ## Build and contribute
 
