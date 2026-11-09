@@ -42,7 +42,7 @@ export function blockText(el: Element | null | undefined): string | undefined {
 export function tidy(s: string | undefined): string | undefined {
 	if (!s) return undefined;
 	const t = s
-		.replace(/[‎‏ ]/g, " ")
+		.replace(/[\u200e\u200f\u00a0]/g, " ")
 		.split("\n")
 		.map((line) => line.replace(/[ \t\r\f\v]+/g, " ").trim())
 		.join("\n")

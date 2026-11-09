@@ -57,7 +57,7 @@ export class ZoteroImporter {
 			let frontmatter: Frontmatter | null = {};
 			if (m) {
 				try {
-					const parsed = parseYaml(m[1]);
+					const parsed: unknown = parseYaml(m[1]);
 					frontmatter = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Frontmatter) : {};
 				} catch {
 					frontmatter = null;
@@ -86,7 +86,7 @@ export class ZoteroImporter {
 				const f = this.app.metadataCache.getFirstLinkpathDest(name, "");
 				return f && f.name === name ? f.path : undefined;
 			},
-			parseYaml: (t) => parseYaml(t),
+			parseYaml: (t): unknown => parseYaml(t),
 		};
 	}
 
@@ -103,7 +103,10 @@ export class ZoteroImporter {
 		const biblio = this.library.propertiesFor(data, extras.citekey);
 		delete biblio[p("status")];
 		delete biblio[p("added")];
-		const link = (path: string) => `[[${this.app.metadataCache.fileToLinktext(this.app.vault.getAbstractFileByPath(path) as TFile, "", false)}]]`;
+		const link = (path: string) => {
+			const f = this.app.vault.getAbstractFileByPath(path);
+			return `[[${f instanceof TFile ? this.app.metadataCache.fileToLinktext(f, "", false) : path}]]`;
+		};
 		const pdf = extras.attachments.find((a) => /\.pdf$/i.test(a));
 		const workflow: Frontmatter = {
 			[p("collections")]: extras.collections.length ? extras.collections.map((c) => `[[${c}]]`) : undefined,

@@ -20,6 +20,7 @@ import { canonicalIsbn, normalizeDoi } from "./identifiers";
 import { parseDate, yearOf } from "./metadata/dates";
 import { ReferenceData } from "./metadata/types";
 import { PersonName, displayName, familyOf } from "./names";
+import { asText } from "./text";
 
 export interface BbtCreator {
 	creatorType?: string;
@@ -127,7 +128,7 @@ export function itemToReference(item: BbtItem): ReferenceData {
 		list.push(n);
 	}
 	const date = parseDate(str(item.date));
-	const doi = str(item.DOI) ?? String(item.extra ?? "").match(/^DOI:\s*(\S+)/im)?.[1];
+	const doi = str(item.DOI) ?? asText(item.extra).match(/^DOI:\s*(\S+)/im)?.[1];
 	const isbn = str(item.ISBN)
 		?.split(/[\s,;]+/)
 		.map((s) => canonicalIsbn(s))
@@ -445,7 +446,7 @@ export function planImport(exp: BbtExport, notes: VaultNote[], o: ImportOptions)
 		if (!link) continue;
 		const item = byKey.get(link[2]);
 		const kept = item && noteFor.get(item);
-		if (kept) report.duplicateNotes.push({ note: n.path, keptNote: kept.note.path, citekey: item!.citationKey ?? item!.key });
+		if (kept) report.duplicateNotes.push({ note: n.path, keptNote: kept.note.path, citekey: item.citationKey ?? item.key });
 		else report.missingFromExport.push(n.path);
 	}
 

@@ -81,7 +81,7 @@ export function shorttitle(title: string | undefined, n: number, m: number): str
 
 /** Family names keep periods and hyphens ("abbott-smith", "a.benwagner"), as Better BibTeX does. */
 function familyName(a: string): string {
-	return asciiFold(a).replace(/[^A-Za-z0-9.\-]/g, "");
+	return asciiFold(a).replace(/[^A-Za-z0-9.-]/g, "");
 }
 
 function applyCase(s: string, mod?: string): string {

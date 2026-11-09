@@ -7,6 +7,7 @@ import { FieldChange, compareProperties } from "./manual";
 import { FIELD_LABELS, PEOPLE_KEYS, PeopleKey, TEXT_KEYS } from "./properties";
 import { LibrarySettings, PropertyKey } from "./settings";
 import { DEFAULT_TEMPLATE, escapeMarkdown, markdownSafeUrl, renderTemplate, safeFilename } from "./template";
+import { asText } from "./text";
 
 type Frontmatter = Record<string, unknown>;
 
@@ -15,7 +16,7 @@ const isEmpty = (v: unknown) =>
 
 /** Strip [[ ]] and aliases from a link-ish property value. */
 export function unlink(v: unknown): string {
-	return String(v ?? "")
+	return asText(v)
 		.replace(/^\[\[/, "")
 		.replace(/\]\]$/, "")
 		.split("|")[0]
@@ -150,7 +151,7 @@ export class Library {
 	}
 
 	frontmatter(file: TFile): Frontmatter {
-		return (this.app.metadataCache.getFileCache(file)?.frontmatter as Frontmatter | undefined) ?? {};
+		return this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
 	}
 
 	inFolder(file: TFile, folder: string): boolean {
@@ -169,17 +170,17 @@ export class Library {
 	/** The note's citekey, including one just written that the metadata cache hasn't indexed yet. */
 	citekeyOf(file: TFile): string {
 		const reserved = [...this.liveReservations()].reverse().find((r) => r.file === file);
-		return reserved?.citekey ?? String(this.frontmatter(file)[this.prop("citekey")] ?? "").trim();
+		return reserved?.citekey ?? asText(this.frontmatter(file)[this.prop("citekey")]).trim();
 	}
 
 	/** The identifier a note carries, preferring DOI, then ISBN, then URL. */
 	identifierOf(file: TFile): Identifier | null {
 		const fm = this.frontmatter(file);
-		const doi = normalizeDoi(String(fm[this.prop("doi")] ?? ""));
+		const doi = normalizeDoi(asText(fm[this.prop("doi")]));
 		if (doi) return { kind: "doi", value: doi };
-		const isbn = normalizeIsbn(String(fm[this.prop("isbn")] ?? ""));
+		const isbn = normalizeIsbn(asText(fm[this.prop("isbn")]));
 		if (isbn) return { kind: "isbn", value: isbn };
-		const url = String(fm[this.prop("url")] ?? "").trim();
+		const url = asText(fm[this.prop("url")]).trim();
 		if (/^https?:\/\//i.test(url)) return { kind: "url", value: url };
 		return null;
 	}
@@ -208,7 +209,7 @@ export class Library {
 		for (const f of this.referenceFiles()) {
 			if (f === except) continue;
 			if (f.basename.toLowerCase() === lower) return true;
-			if (String(this.frontmatter(f)[this.prop("citekey")] ?? "").trim().toLowerCase() === lower) return true;
+			if (asText(this.frontmatter(f)[this.prop("citekey")]).trim().toLowerCase() === lower) return true;
 		}
 		return false;
 	}
@@ -225,9 +226,9 @@ export class Library {
 		const authors = namesFromProperty(fm[this.prop("authors")]);
 		const people = authors.length ? authors : namesFromProperty(fm[this.prop("editors")]);
 		return {
-			title: String(fm[this.prop("title")] ?? file.basename),
+			title: asText(fm[this.prop("title")] ?? file.basename),
 			familyNames: people.map(familyOf).filter(Boolean),
-			year: Number(String(fm[this.prop("year")] ?? "").match(/\d{4}/)?.[0]) || undefined,
+			year: Number(asText(fm[this.prop("year")]).match(/\d{4}/)?.[0]) || undefined,
 		};
 	}
 
@@ -278,7 +279,7 @@ export class Library {
 		this.assertActive();
 		await this.app.fileManager.processFrontMatter(file, (fm: Frontmatter) => {
 			for (const [k, v] of Object.entries(props)) {
-				const unchanged = Object.prototype.hasOwnProperty.call(replaceIfUnchanged, k) && sameValue(fm[k], replaceIfUnchanged[k]);
+				const unchanged = (Object.prototype.hasOwnProperty.call(replaceIfUnchanged, k) as boolean) && sameValue(fm[k], replaceIfUnchanged[k]);
 				if (isEmpty(fm[k]) || unchanged) fm[k] = v;
 			}
 		});
@@ -390,7 +391,7 @@ export class Library {
 	 */
 	async complete(file: TFile, data: ReferenceData | null, status?: string, captureUrls: string[] = [], clipped?: Frontmatter): Promise<TFile> {
 		const fm = this.frontmatter(file);
-		const existingKey = String(fm[this.prop("citekey")] ?? "").trim();
+		const existingKey = asText(fm[this.prop("citekey")]).trim();
 		// Without looked-up data, the note's own properties name it (a manual reference, #16).
 		const basis: ReferenceData = data ?? { ...this.keyInputsFromNote(file), type: "", authors: [], source: "note" };
 		const citekey = existingKey || this.makeCitekey(basis, file);
@@ -441,7 +442,7 @@ export class Library {
 	async attach(note: TFile, attachment: TFile, known: AttachmentNaming = {}): Promise<void> {
 		const fm = this.frontmatter(note);
 		const fromNote = this.keyInputsFromNote(note);
-		const noteTitle = String(fm[this.prop("title")] ?? "").trim();
+		const noteTitle = asText(fm[this.prop("title")]).trim();
 		const citekey = this.citekeyOf(note) || known.citekey || note.basename;
 		const naming: Partial<ReferenceData> = {
 			title: noteTitle || known.title || "",

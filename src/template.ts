@@ -79,7 +79,9 @@ const utf8Length = (s: string) => new TextEncoder().encode(s).length;
 /** Make a string safe for use as a file name on macOS, Windows and Linux. */
 export function safeFilename(name: string, maxBytes = MAX_FILENAME_BYTES): string {
 	const cleaned = name
-		.replace(/[\\/:*?"<>|#^[\]\u0000-\u001f\u007f]/g, " ")
+		.replace(/[\\/:*?"<>|#^[\]]/g, " ")
+		// Control characters (C0, DEL and C1).
+		.replace(/\p{Cc}/gu, " ")
 		.replace(/\s+/g, " ")
 		.trim()
 		// Leading dots hide the file.

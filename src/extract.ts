@@ -3,6 +3,7 @@ import { applyAnnotationBlock, currentAnnotationBlock, headingLevel, parseColorM
 import { Cancelled, Library, unlink } from "./library";
 import { readAnnotations } from "./pdf";
 import { LibrarySettings } from "./settings";
+import { asText } from "./text";
 
 export interface ExtractSummary {
 	note: TFile;
@@ -108,7 +109,7 @@ export class Extractor {
 		const s = this.settings();
 		const target = s.statusAfterExtraction.trim();
 		if (!target) return null;
-		const current = String(fm[this.library.prop("status")] ?? "").trim();
+		const current = asText(fm[this.library.prop("status")]).trim();
 		if (current === target) return null;
 		const ti = s.statuses.indexOf(target);
 		const ci = s.statuses.indexOf(current);

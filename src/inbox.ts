@@ -42,7 +42,7 @@ export class Inbox {
 		const s = this.settings();
 		const content = await this.app.vault.read(file);
 		const info = getFrontMatterInfo(content);
-		const fm = (info.exists ? parseYaml(info.frontmatter) : {}) ?? {};
+		const fm = ((info.exists ? parseYaml(info.frontmatter) : {}) ?? {}) as Record<string, unknown>;
 		const url = s.urlProperties.map((k) => fm[k]).find((v) => typeof v === "string" && /^https?:\/\//i.test(v)) as string | undefined;
 		if (!url) {
 			new Notice(`Stacks: no URL found in ${file.name}; left in the inbox.`);

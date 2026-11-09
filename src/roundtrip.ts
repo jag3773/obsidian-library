@@ -274,7 +274,7 @@ export class RoundTrip {
 	private async settled(path: string): Promise<FileStat | null> {
 		let prev = await this.host.stat(path);
 		for (let i = 0; prev && i < SETTLE_TRIES; i++) {
-			await new Promise((r) => setTimeout(r, this.settleMs));
+			await new Promise((r) => window.setTimeout(r, this.settleMs));
 			const now = await this.host.stat(path);
 			if (!now) return null;
 			if (now.size === prev.size && now.mtimeMs === prev.mtimeMs) return now;

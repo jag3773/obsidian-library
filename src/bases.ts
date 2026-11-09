@@ -55,7 +55,7 @@ export function validateBase(parsed: unknown): string | null {
 	if (parsed.views === undefined) return null;
 	if (!Array.isArray(parsed.views)) return "views must be a list";
 	for (let i = 0; i < parsed.views.length; i++) {
-		const v = parsed.views[i];
+		const v: unknown = parsed.views[i];
 		const at = `views[${i}]`;
 		if (!isObject(v)) return `${at} must be a mapping`;
 		if (v.order !== undefined && (!Array.isArray(v.order) || v.order.some((o) => typeof o !== "string"))) return `${at}.order must be a list of property names`;
@@ -178,7 +178,7 @@ function noteProperty(id: unknown): string | null {
 function filterStrings(filter: BaseFilter | undefined, out: string[] = []): string[] {
 	if (filter === undefined) return out;
 	if (typeof filter === "string") out.push(filter);
-	else for (const list of Object.values(filter) as BaseFilter[][]) for (const f of list) filterStrings(f, out);
+	else for (const list of Object.values<BaseFilter[]>(filter)) for (const f of list) filterStrings(f, out);
 	return out;
 }
 

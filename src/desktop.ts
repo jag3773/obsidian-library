@@ -2,7 +2,7 @@
  * The round trip's Host on desktop, from Node's modules. Loaded only when
  * Platform.isDesktopApp, so mobile never touches fs or child_process.
  */
-import { App, FileSystemAdapter } from "obsidian";
+import { App, FileSystemAdapter, Platform } from "obsidian";
 import type { Host } from "./roundtrip";
 
 export interface NodeModules {
@@ -12,13 +12,15 @@ export interface NodeModules {
 	cp: typeof import("child_process");
 }
 
-/* eslint-disable @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports */
-const requireModules = (): NodeModules => ({
-	fs: require("fs"),
-	path: require("path"),
-	os: require("os"),
-	cp: require("child_process"),
-});
+function requireModules(): NodeModules {
+	if (!Platform.isDesktopApp) throw new Error("This needs the Obsidian desktop app.");
+	return {
+		fs: require("fs") as typeof import("fs"),
+		path: require("path") as typeof import("path"),
+		os: require("os") as typeof import("os"),
+		cp: require("child_process") as typeof import("child_process"),
+	};
+}
 
 /** `modules` is for tests, which run as ES modules without require. */
 export function nodeHost(app: App, modules: NodeModules = requireModules()): Host {

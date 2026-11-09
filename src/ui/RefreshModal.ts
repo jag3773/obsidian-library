@@ -1,7 +1,8 @@
 import { App, Modal, Setting } from "obsidian";
 import { FieldChange } from "../manual";
+import { asText } from "../text";
 
-const show = (v: unknown) => (v === undefined || v === null || v === "" ? "(empty)" : Array.isArray(v) ? v.join("; ") : String(v));
+const show = (v: unknown) => (v === undefined || v === null || v === "" ? "(empty)" : Array.isArray(v) ? v.join("; ") : asText(v));
 
 /**
  * The fields a fresh lookup would change, each with a checkbox. Empty fields are ticked;

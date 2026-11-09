@@ -197,7 +197,7 @@ function glyphWidth(c: string): number {
 	if (/[jft()[\]/\\r"-]/.test(c)) return 0.35;
 	if (/[mwMW]/.test(c)) return 0.85;
 	if (/[A-Z]/.test(c)) return 0.68;
-	if (/[　-鿿가-힯＀-￯]/.test(c)) return 1;
+	if (/[\u3000-\u9fff\uac00-\ud7af\uff00-\uffef]/.test(c)) return 1;
 	return 0.55;
 }
 
@@ -224,7 +224,7 @@ function textInBox(item: TextItem, box: Box, fontWidths?: Map<string, number>): 
 	// The font's real widths when every character has one; otherwise the estimate. Either way the
 	// widths are scaled to the run's measured width, so only their proportions matter.
 	const known = fontWidths && chars.every((c) => fontWidths.has(c));
-	const width = (c: string) => (known ? (fontWidths as Map<string, number>).get(c) as number : glyphWidth(c));
+	const width = (c: string) => (known ? fontWidths.get(c) as number : glyphWidth(c));
 	const total = chars.reduce((n, c) => n + width(c), 0) || 1;
 	const scale = (item.width || 0) / total;
 	let pos = x;
@@ -238,7 +238,7 @@ function textInBox(item: TextItem, box: Box, fontWidths?: Map<string, number>): 
 	for (const { c, mid } of xs) {
 		const space = /\s/.test(c);
 		const last = words[words.length - 1];
-		if (last && last.space === space && !/[　-鿿]/.test(c)) {
+		if (last && last.space === space && !/[\u3000-\u9fff]/.test(c)) {
 			last.mid = (last.mid * last.s.length + mid) / (last.s.length + 1);
 			last.s += c;
 		} else words.push({ s: c, mid, space });
@@ -257,7 +257,7 @@ export function joinLines(lines: string[]): string {
 		if (!line) continue;
 		if (!out) out = line;
 		else if (/\p{Ll}-$/u.test(out) && /^\p{Ll}/u.test(line)) out = out.slice(0, -1) + line;
-		else if (/[　-鿿]$/.test(out) && /^[　-鿿]/.test(line)) out += line;
+		else if (/[\u3000-\u9fff]$/.test(out) && /^[\u3000-\u9fff]/.test(line)) out += line;
 		else out += " " + line;
 	}
 	return out;
@@ -317,7 +317,7 @@ export async function fontWidths(page: PdfPageLike, ops?: PdfOps): Promise<FontW
 			if (fn === ops.setFont && args && typeof args[0] === "string") font = args[0];
 			else if (fn === ops.showText && font && Array.isArray(args?.[0])) {
 				let m = out.get(font);
-				if (!m) out.set(font, (m = new Map()));
+				if (!m) out.set(font, (m = new Map<string, number>()));
 				for (const g of args[0] as unknown[]) {
 					const glyph = g as { unicode?: unknown; width?: unknown } | number | null;
 					if (glyph && typeof glyph === "object" && typeof glyph.unicode === "string" && typeof glyph.width === "number" && glyph.unicode)

@@ -5,6 +5,7 @@
  */
 import { CslDate, CslItem, CslName, missingFields, noteToCsl } from "./citation";
 import { PropertyKey } from "./properties";
+import { asText } from "./text";
 
 export type BibFormat = "csl-json" | "biblatex" | "bibtex";
 
@@ -41,7 +42,7 @@ export interface Bibliography {
 }
 
 const plain = (v: unknown) =>
-	String(v ?? "")
+	asText(v)
 		.replace(/^\[\[([^\]|]*)(?:\|[^\]]*)?\]\]$/, "$1")
 		.trim()
 		.toLowerCase();
@@ -146,7 +147,8 @@ export function tex(s: string): string {
 		.replace(/([{}&%$#_])/g, "\\$1")
 		.replace(/~/g, "\\textasciitilde{}")
 		.replace(/\^/g, "\\textasciicircum{}")
-		.replace(/\u0000/g, "\\textbackslash{}")
+		.split("\u0000")
+		.join("\\textbackslash{}")
 		.replace(/\s+/g, " ")
 		.trim();
 }
