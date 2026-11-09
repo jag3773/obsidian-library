@@ -22,6 +22,7 @@ import { FindPdfModal } from "./ui/FindPdfModal";
 import { FullText } from "./fulltext";
 import { asText } from "./text";
 import { Citations } from "./citations";
+import { registerMaintenanceCommands } from "./maintenanceCommands";
 
 const PREFIX = "Stacks";
 const COMPLETE_DEBOUNCE_MS = 2000;
@@ -221,6 +222,9 @@ export default class LibraryPlugin extends Plugin {
 				return true;
 			},
 		});
+
+		// Health check, PDF relinking and duplicate merging (#26, #28).
+		registerMaintenanceCommands(this);
 
 		// Register after the initial index so existing files don't fire "create".
 		this.app.workspace.onLayoutReady(() => {

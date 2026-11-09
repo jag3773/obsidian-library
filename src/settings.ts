@@ -7,6 +7,7 @@ import { displayCitationSettings } from "./ui/CitationSettings";
 import { DEFAULT_IMPORT_CHOICES, ImportChoices } from "./zotero";
 import type LibraryPlugin from "./main";
 import { PathSuggest, filePaths, folderPaths } from "./ui/PathSuggest";
+import { displayMaintenanceSettings } from "./ui/MaintenanceSettings";
 
 import { DEFAULT_COLOR_MAP, parseColorMap } from "./annotations";
 import { DEFAULT_PROPERTY_NAMES, FIELD_LABELS, PROPERTY_KEYS, PropertyKey } from "./properties";
@@ -79,6 +80,12 @@ export interface LibrarySettings {
 	tabletAdoptUnknown: boolean;
 	/** What was sent to the tablet folder, by file name there. Kept by the plugin, not shown. */
 	tabletSent: Record<string, SentRecord>;
+
+	// Maintenance (health check)
+	/** Report items in a watched status unchanged for longer than this many days; 0 turns it off. */
+	healthStaleDays: number;
+	/** Statuses the stale check watches; empty watches every status. */
+	healthStaleStatuses: string[];
 }
 
 export const DEFAULT_SETTINGS: LibrarySettings = {
@@ -119,6 +126,8 @@ export const DEFAULT_SETTINGS: LibrarySettings = {
 	returnStatus: "reviewing",
 	tabletAdoptUnknown: false,
 	tabletSent: {},
+	healthStaleDays: 365,
+	healthStaleStatuses: ["queued", "reading", "reviewing"],
 };
 
 /** Merge saved data over defaults, including the nested property map. */
@@ -139,6 +148,8 @@ export function withDefaults(saved: Partial<LibrarySettings> | null | undefined)
 	if (!(s.citeFormat in CITE_FORMAT_LABELS)) s.citeFormat = DEFAULT_SETTINGS.citeFormat;
 	const sent = s.tabletSent as unknown;
 	s.tabletSent = sent && typeof sent === "object" && !Array.isArray(sent) ? { ...(sent as Record<string, SentRecord>) } : {};
+	if (typeof s.healthStaleDays !== "number" || !Number.isFinite(s.healthStaleDays) || s.healthStaleDays < 0) s.healthStaleDays = DEFAULT_SETTINGS.healthStaleDays;
+	s.healthStaleStatuses = Array.isArray(s.healthStaleStatuses) ? s.healthStaleStatuses.filter((x) => typeof x === "string") : [...DEFAULT_SETTINGS.healthStaleStatuses];
 	// An empty references folder would make every note in the vault a "reference" that
 	// automatic completion could rename and move.
 	if (typeof s.referencesFolder !== "string" || !s.referencesFolder.trim() || s.referencesFolder.trim() === "/")
@@ -376,6 +387,7 @@ export class LibrarySettingTab extends PluginSettingTab {
 
 		displayCitationSettings(this.app, containerEl, s, save);
 		this.displayAnnotations(containerEl);
+		displayMaintenanceSettings(containerEl, this.plugin);
 		this.displayBase(containerEl);
 	}
 
