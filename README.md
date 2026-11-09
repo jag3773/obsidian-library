@@ -1,52 +1,90 @@
-# Library for Obsidian
+# Library
 
-A reference manager that keeps your library in plain Markdown. Each book, article or web page is one note. Its metadata lives in properties, its PDF sits in a folder next to it, and you browse the whole collection with Obsidian Bases. If you uninstall the plugin, your library still works.
+### Your sources. Your ideas. One home.
 
-Status: early (0.1). Capture features are in place. The reading round trip (send a PDF to a tablet, pull highlights back into the note) and citation export are planned; see [PLAN.md](PLAN.md).
+The paper you saved. The passage that changed your mind. The note that became a talk, a thesis, or your next project. Bring them together in Obsidian.
 
-## What it does today
+**Library is building a complete research workflow inside your vault: collect sources, read deeply, connect ideas, and write with confidence.**
 
-- **Add reference.** Paste an ISBN, DOI, arXiv ID or URL. The plugin looks up the metadata, checks for a duplicate, creates the note with a citekey filename, and opens it.
-- **Process the inbox.** Drop a Web Clipper note or a PDF into your inbox folder. Notes get enriched from their URL and filed. What Web Clipper saved (author, published date, description) fills anything the lookup can't find, which covers sites that turn the plugin away. PDFs are scanned for a DOI or ISBN, looked up, given a note, and moved to your attachments folder.
-- **Complete a note from its properties.** Create a note in your references folder, type an `isbn`, `doi` or `url` property, and the plugin fills in the rest and renames it.
-- **Citekeys.** Uses a Better BibTeX-compatible formula (default `auth.lower + shorttitle(3, 3) + year`), so new keys match the style of an existing Zotero library.
+If Obsidian is where you think, it should be enough to manage the sources behind that thinking, too. That is the ambition: one app for your library and the knowledge you make from it.
 
-Every reference gets, where the source has them, a title, authors, publication date (`published`), year, abstract, publisher, ISBN or DOI.
+[Get started](#install-beta) · [Available today](#available-today) · [The road ahead](#the-road-ahead)
 
-The plugin only fills empty properties. It never overwrites what you typed. The one exception is a note it files from the inbox: there, values it looked up replace the guesses Web Clipper made from the page (its page title, a shortened description). The URL and status are kept.
+> **Early beta · 0.2.x.** Capture, metadata lookup, citekeys, PDF filing, and library views are available now. Library is still growing toward a complete reference manager. Zotero migration, annotation extraction, and citation export are future work.
 
-## Everything is a setting
+## Let your reading become part of your thinking
 
-Folders, filename formats, citekey pattern, statuses and the note template are configurable. Folder and template settings suggest matching paths from your vault as you type.
+A source deserves a place beside the ideas it inspires. Link an article to a project. Connect an author to a person note. Follow a book into a question, an experiment, or a draft. Use Obsidian's links, properties, search, and Bases to work with your references alongside the rest of your vault.
 
-**Point it at your library's base.** Under **Library base**, choose the `.base` file that shows your library, or press **Create base** to make one. The plugin reads the folder the base requires (a `file.inFolder(...)` filter every note must match; negated or either/or folders are ignored) and the properties it uses, and matches each field it writes to one of them, by name or a common synonym (`author` for authors, `source` for url, `date` for the publication date, `description` for the abstract, and so on). Each match is a dropdown, so you only change the ones it got wrong. A field with no matching property is created under the plugin's default name. **Create base** keeps your current mapping, and records each field's name in the base so **Re-read** recovers it.
+Each source is an ordinary Markdown note. Its metadata lives in properties; its PDFs live in ordinary folders. Your reading notes stay yours. The library remains useful if you remove the plugin.
 
-## Metadata sources
+Zotero has helped researchers collect, organize, and cite their work for years. Library shares that respect for careful research and takes an Obsidian-first approach: bring those essential workflows into the place where your knowledge already lives. The goal is to make a separate reference manager optional for Obsidian users.
 
-Open Library and Google Books (ISBN), Crossref and doi.org (DOI), arXiv, and GitHub's public API (repositories). No API keys. The plugin sends only the identifier you looked up. Set a Crossref contact email if you want to use Crossref's polite pool; nothing is sent otherwise.
+## Available today
 
-For other URLs it reads the page itself, the way Zotero's translators do, trusting the most specific source first:
+- **Save a source by identifier.** Paste an ISBN, DOI, arXiv ID, or URL. Library looks up metadata, checks for an existing reference, creates a note, and opens it.
+- **Turn an inbox into a library.** Drop in a Web Clipper note or a PDF. Clipped notes are enriched and filed; what Web Clipper saved (author, published date, description) fills anything the lookup can't find, which covers sites that turn Library away. Looked-up values replace the guesses Web Clipper made from the page, such as its page title; the URL and status are kept. PDFs are checked for a DOI or ISBN in their opening pages, paired with a reference note, and moved into your attachments folder. When a lookup cannot identify a PDF, its document metadata or filename provides a starting point.
+- **Complete a reference as you write.** Add an ISBN, DOI, or URL property to a note in your references folder. Library can fill missing metadata and name the note for you. Metadata enrichment preserves populated properties and the existing note body.
+- **Start with the details that matter.** References come with a title, authors, publication date (`published`), year, abstract, and, where the source has them, publisher, ISBN, or DOI. Book pages on Amazon, Goodreads, and Kobo, GitHub repositories, and news and blog articles are read the way Zotero's translators read them.
+- **Give sources useful citekeys.** Use a configurable Better BibTeX-style formula, with collision handling. The default is `auth.lower + shorttitle(3, 3) + year`. Citekey generation is available today; inserting and formatting citations is still ahead.
+- **Browse with Obsidian Bases.** Choose your library's `.base` file, or create a starter Base. Match fields to your vault's property names and browse your collection with tables, filters, and reading-status views.
+- **Make it fit your vault.** Configure folders, filenames, property mappings, note templates, statuses, and author links. Folder and template settings suggest matching vault paths as you type.
 
-1. **Site readers** for Amazon, Goodreads and Kobo book pages and GitHub repositories, which keep their best data outside the standard tags.
-2. **schema.org JSON-LD**, including a book's edition (`workExample`).
-3. **Standard tags:** Highwire `citation_*` (used by Google Scholar), Dublin Core, PRISM and Open Graph.
-4. **The page body,** as a last resort: bylines (microdata, `rel="author"`, author-page links) and the article's `<time>`.
+### From a saved paper to a connected note
 
-A page that names a DOI is looked up through Crossref. A book page that names an ISBN gets missing dates, publishers and descriptions from Open Library and Google Books; the page's own values win. A bot check served in place of the page (Kobo, Cloudflare, an Amazon captcha) is recognized and ignored, so its title never becomes the reference's.
+1. Run **Library: Add reference** and paste a DOI, or drop a PDF into your inbox.
+2. Open the reference note, read the PDF in Obsidian, and add your own thoughts and links.
+3. Browse your library in a Base, follow connections into your projects, and keep building on what you read.
+
+No separate library database to maintain. The notes and files in your vault are the library.
+
+## The road ahead
+
+The destination is the whole journey: **collect → read → understand → write → cite**.
+
+The next pieces include bringing an existing Zotero library across, turning highlights into linked notes, keeping complete citation metadata, and citing sources in finished work. Search, duplicate merging, attachment maintenance, and dependable work across devices matter just as much as the first capture.
+
+| The next step | Proposals to explore |
+| --- | --- |
+| Bring your library with you | [Zotero migration](https://github.com/jag3773/obsidian-library/issues/18), [bibliography imports](https://github.com/jag3773/obsidian-library/issues/17) |
+| Capture more of what you find | [Scholarly web capture](https://github.com/jag3773/obsidian-library/issues/23), [full-text retrieval](https://github.com/jag3773/obsidian-library/issues/24) |
+| Return to what mattered | [Highlights into notes](https://github.com/jag3773/obsidian-library/issues/22), [full-text search](https://github.com/jag3773/obsidian-library/issues/25) |
+| Write with your sources | [Portable bibliographies](https://github.com/jag3773/obsidian-library/issues/19), [citation styles](https://github.com/jag3773/obsidian-library/issues/20), [citations while drafting](https://github.com/jag3773/obsidian-library/issues/21) |
+| Trust a growing collection | [Complete metadata](https://github.com/jag3773/obsidian-library/issues/15), [duplicate merging](https://github.com/jag3773/obsidian-library/issues/26), [library health checks](https://github.com/jag3773/obsidian-library/issues/28) |
+| Keep reading across devices | [Mobile and offline reliability](https://github.com/jag3773/obsidian-library/issues/30), [external-reader round trip](https://github.com/jag3773/obsidian-library/issues/29) |
+
+The [feature backlog](https://github.com/jag3773/obsidian-library/issues?q=is%3Aissue%20is%3Aopen%20label%3Aenhancement) tracks those gaps. It is a set of proposals to prioritize, not a promise that every feature will ship. [PLAN.md](PLAN.md) describes the implementation stages and design choices.
+
+Obsidian already provides the workspace. Library can build on Web Clipper, Bases, the PDF viewer, and compatible plugins rather than recreating them. The aim is a coherent research workflow with your vault at its center.
 
 ## Install (beta)
 
-Until it is in the community directory, build it from source:
+Use a recent Obsidian version with **Bases** enabled for the library views.
 
-1. `npm install && npm run build`
-2. Copy `main.js`, `manifest.json` and `styles.css` into `<vault>/.obsidian/plugins/library/`.
+### With BRAT
+
+1. Install and enable [BRAT](https://github.com/TfTHacker/obsidian42-brat).
+2. Choose **Add beta plugin** and enter `jag3773/obsidian-library`.
 3. Enable **Library** in Community plugins.
 
-**BRAT:** BRAT installs from GitHub releases, so it works once a release is listed on the [releases page](https://github.com/jag3773/obsidian-library/releases). If none is listed yet, use the steps above. When one is: install BRAT, choose **Add beta plugin**, enter `jag3773/obsidian-library`, then enable **Library**.
+Builds are available on the [releases page](https://github.com/jag3773/obsidian-library/releases).
 
-## Suggested Base
+### Manual installation
 
-**Create base** in settings writes one like this for you, using your folder and property names. To write it by hand, create `Library.base` anywhere in your vault:
+Download `main.js`, `manifest.json`, and `styles.css` from the same release. Put them in `<vault>/.obsidian/plugins/library/`, then enable **Library**.
+
+**Upgrading from 0.1.x?** The plugin ID changed from `reference-library` to `library` in 0.2.0. Disable the old plugin and keep a backup of its folder. To retain your settings, copy its `data.json` into the new `library` folder before enabling the new version.
+
+### Set up your library
+
+Open Library's settings and choose your references, attachments, and inbox folders. Under **Library base**, pick an existing `.base` file or press **Create base**.
+
+When a Base requires one folder, Library can use it as the references folder. Negated or ambiguous folder filters leave the configured destination unchanged. Review the field dropdowns so Library uses names such as `author`, `source`, or `Citation Key` the way your vault does. Web Clipper's `published` and `description` are recognized as the publication date and abstract. **Create base** preserves your mappings; **Re-read** refreshes the mapping from a selected Base.
+
+<details>
+<summary>Example Base to customize</summary>
+
+This example assumes the default folder and property names. The settings command generates a Base using your own mappings.
 
 ```yaml
 filters:
@@ -55,45 +93,66 @@ filters:
     - file.hasProperty("citekey")
 formulas:
   name: file.asLink(title)
-  pdf_icon: 'if(pdf, link(pdf.toString().replace("[[", "").replace("]]", ""), "📄"), "")'
 properties:
   formula.name:
     displayName: Title
-  formula.pdf_icon:
-    displayName: PDF
 views:
   - type: table
     name: Library
     groupBy:
       property: status
       direction: ASC
-    order: [formula.name, authors, year, type, formula.pdf_icon]
+    order: [formula.name, authors, year, type, pdf, status]
   - type: table
     name: Queue
     filters: 'status == "queued"'
     order: [formula.name, authors, year, added]
 ```
 
-## Development
+</details>
 
+## Metadata and privacy
+
+Library uses Open Library and Google Books for ISBNs, Crossref and doi.org for DOIs, arXiv for arXiv IDs, GitHub's public API for repositories, and a web page's own metadata for other URLs. No API keys are required.
+
+For a web page, Library trusts the most specific source first:
+
+1. **Site readers** for Amazon, Goodreads, and Kobo book pages and GitHub repositories, which keep their best data outside the standard tags.
+2. **schema.org JSON-LD**, including a book's edition (`workExample`) and author references elsewhere in the page's data.
+3. **Standard tags:** Highwire `citation_*` (used by Google Scholar), Dublin Core, PRISM, and Open Graph.
+4. **The page body,** as a last resort: bylines (microdata, `rel="author"`, author-page links) and the article's `<time>`.
+
+A page that names a DOI is looked up through Crossref. A book page that names an ISBN gets a missing date, publisher, or description from Open Library and Google Books; the page's own values win. A bot check served in place of the page (Kobo, Cloudflare, an Amazon captcha) is recognized and ignored.
+
+Note bodies and PDF text are processed locally. Lookups send the identifier or URL to the relevant service or website; identifiers discovered in a PDF may also be looked up. An optional Crossref contact email is sent only when you configure it. Library has no telemetry or required cloud account.
+
+## Build and contribute
+
+```sh
+git clone https://github.com/jag3773/obsidian-library.git
+cd obsidian-library
+npm ci
+npm run build
 ```
-npm install
+
+Copy the three plugin files into your vault as described above. For development:
+
+```sh
 npm run dev      # watch build
-npm test         # unit and vault-level tests
-npm run bbt-accuracy -- path/to/BetterBibTeX.json 2025   # compare generated keys with a Zotero export
+npm test         # pure-module and vault/settings tests
+npm run bbt-accuracy -- path/to/BetterBibTeX.json 2025
 ```
 
-`npm test` also runs vault-level tests (duplicate detection, inbox filing, attachment naming, timers and unload) against an in-memory stand-in for the Obsidian API in `test/mocks/obsidian.ts`.
+Tests use an in-memory Obsidian stand-in for vault and settings behavior. Real-vault testing is valuable, especially for reading workflows, mobile use, and library views.
 
-### Releasing
+Have a workflow that still sends you back to a separate reference manager? [Describe it in an issue](https://github.com/jag3773/obsidian-library/issues/new). Concrete examples help shape what Library builds next.
 
-Set the same version in `manifest.json` and `package.json`, add it to `versions.json`, commit, then push a matching tag:
+<details>
+<summary>Publishing a release</summary>
 
-```
-git tag 0.1.0 && git push origin 0.1.0
-```
+Set the same new version in `manifest.json` and `package.json`, add it to `versions.json`, and commit. Push a matching, unused version tag. The Release workflow runs tests, builds, and publishes a pre-release containing `main.js`, `manifest.json`, and `styles.css` for BRAT and manual installation.
 
-The Release workflow runs the tests, builds, and publishes a pre-release with `main.js`, `manifest.json` and `styles.css`, which is what BRAT downloads.
+</details>
 
 ## License
 
