@@ -46,10 +46,20 @@ test("a note's picker entry comes from its properties", () => {
 		DEFAULT_PROPERTY_NAMES,
 		"References/limaMethod2020.md"
 	);
-	assert.deepEqual(ref, { key: "limaMethod2020", title: "On Method", authors: "Lima, World Health Organization", year: "2020", path: "References/limaMethod2020.md" });
+	assert.deepEqual(ref, { key: "limaMethod2020", title: "On Method", authors: "Lima, World Health Organization", creators: "Ana Lima, World Health Organization", year: "2020", path: "References/limaMethod2020.md" });
 	assert.equal(citeRef({ title: "No key" }, DEFAULT_PROPERTY_NAMES, "x.md"), undefined);
 	// Editors stand in when there are no authors.
 	assert.equal(citeRef({ citekey: "k", editors: ["Jane Doe"], year: 2001 }, DEFAULT_PROPERTY_NAMES, "k.md")?.authors, "Doe");
+});
+
+test("the picker finds a reference by an author's given name or full name", () => {
+	const ref = citeRef({ citekey: "doeUndated", title: "Undated Book", authors: ["Jane Doe", "Rui Costa"] }, DEFAULT_PROPERTY_NAMES, "d.md")!;
+	assert.equal(ref.authors, "Doe, Costa", "the picker still shows surnames");
+	const keys = (q: string) => searchRefs([ref], q).map((r) => r.key);
+	assert.deepEqual(keys("Jane"), ["doeUndated"]);
+	assert.deepEqual(keys("Jane Doe"), ["doeUndated"]);
+	assert.deepEqual(keys("rui costa"), ["doeUndated"]);
+	assert.deepEqual(keys("Jane Smith"), []);
 });
 
 test("citation text in each format, with locators and several references", () => {
