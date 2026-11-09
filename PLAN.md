@@ -93,7 +93,7 @@ All paths are vault-relative unless marked absolute. "Example (ekfocus)" shows t
 
 | Setting | Default | Purpose |
 |---|---|---|
-| Bibliography file | empty (off) | Vault path for a CSL-JSON export, regenerated when references change |
+| Bibliography file, format, filter, automatic | `library.json`, CSL-JSON, none, off | Done: CSL-JSON, BibLaTeX or BibTeX export, optionally filtered by a property and rewritten automatically ([#19](https://github.com/jag3773/obsidian-library/issues/19)) |
 | Citation style | `chicago-author-date` | CSL style for the "copy formatted citation" command |
 | Health check scope | all | Which checks the report runs |
 
@@ -156,9 +156,10 @@ All requests go through Obsidian's `requestUrl`, which works on mobile and avoid
 ### Stage 3: citations and maintenance
 
 - **Copy formatted citation** and **Copy citekey as Pandoc citation** (`[@key]`).
-- Bibliography export to CSL-JSON (for Pandoc, Quarto and the Pandoc Reference List plugin) using citation.js, regenerated after reference changes with a debounce.
+- Done: bibliography export to CSL-JSON (for Pandoc, Quarto and the Pandoc Reference List plugin), BibLaTeX or BibTeX, regenerated after reference changes with a debounce. Written without citation.js: the mapping is `src/citation.ts`, documented in docs/citation-fields.md.
 - **Health check** report note: notes without a citekey, duplicate citekeys or DOIs/ISBNs, `pdf` links that don't resolve, PDFs in the attachments folder with no note, items stuck in a status longer than a set number of days.
-- **Import Better BibTeX JSON**: the conversion this project used once, generalized. Matches by citekey, then Zotero item key, then exact title; adds properties; creates notes for unmatched items. Dry run first.
+- Done: **Import from Zotero (Better BibTeX JSON)**, the conversion this project used once, generalized ([#18](https://github.com/jag3773/obsidian-library/issues/18)). Matches by filename, citekey property, Zotero item key, then a unique title; adds properties without touching bodies; creates notes for unmatched items; previews first; reports, and can be undone. See docs/migrating-from-zotero.md.
+- Done: manual references and a reviewed metadata refresh ([#16](https://github.com/jag3773/obsidian-library/issues/16)); complete citation fields and creator roles ([#15](https://github.com/jag3773/obsidian-library/issues/15)).
 
 ## 6. Architecture
 
