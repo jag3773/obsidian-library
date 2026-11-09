@@ -1,4 +1,4 @@
-import { App, Modal, Notice, Setting, TFile } from "obsidian";
+import { App, ButtonComponent, Modal, Notice, Setting, TFile } from "obsidian";
 import { DuplicateGroup, describeReason, preferredKeeper } from "../duplicates";
 import { Library } from "../library";
 import { Maintenance, MergePlan } from "../maintenance";
@@ -48,8 +48,11 @@ export class DuplicatesModal extends Modal {
  */
 export class MergeModal extends Modal {
 	private keep: string;
+	/** The plans for the current note to keep; empty until its preview is in. */
 	private plans: MergePlan[] = [];
+	private mergeButton?: ButtonComponent;
 	private busy = false;
+	/** Counts choices of note to keep, so a preview for an earlier choice is ignored. */
 	private request = 0;
 
 	constructor(
@@ -80,6 +83,9 @@ export class MergeModal extends Modal {
 		const files = this.files();
 		const keep = files.find((f) => f.path === this.keep);
 		const request = ++this.request;
+		// Until this choice's preview is in, the previous plan can't be merged.
+		this.plans = [];
+		this.mergeButton?.setDisabled(true);
 		const plans = keep ? await Promise.all(files.filter((f) => f !== keep).map((f) => this.maintenance.planMerge(keep, f))) : [];
 		// A newer choice of note to keep is already rendering.
 		if (request !== this.request) return;
@@ -123,31 +129,32 @@ export class MergeModal extends Modal {
 
 		new Setting(contentEl)
 			.addButton((b) => b.setButtonText("Cancel").onClick(() => this.close()))
-			.addButton((b) =>
-				b
-					.setButtonText("Merge")
+			.addButton((b) => {
+				this.mergeButton = b;
+				b.setButtonText("Merge")
 					.setCta()
-					.onClick(() => void this.merge())
-			);
+					.onClick(() => void this.merge());
+			});
 	}
 
 	private async merge(): Promise<void> {
-		if (this.busy) return;
+		const plans = this.plans;
+		if (this.busy || !plans.length || plans[0].keep.path !== this.keep) return;
 		this.busy = true;
 		let links = 0;
 		let notes = 0;
 		let merged = 0;
 		try {
-			for (const plan of this.plans) {
+			for (const plan of plans) {
 				const r = await this.maintenance.merge(plan);
 				links += r.linksChanged;
 				notes += r.filesChanged;
 				merged++;
 			}
-			new Notice(`Stacks: merged ${merged} ${merged === 1 ? "note" : "notes"} into ${this.plans[0]?.keep.basename ?? "the kept note"}; ${links} ${links === 1 ? "link" : "links"} in ${notes} ${notes === 1 ? "note" : "notes"} now point to it.`);
+			new Notice(`Stacks: merged ${merged} ${merged === 1 ? "note" : "notes"} into ${plans[0].keep.basename}; ${links} ${links === 1 ? "link" : "links"} in ${notes} ${notes === 1 ? "note" : "notes"} now point to it.`);
 		} catch (e) {
 			console.error("[Stacks]", e);
-			new Notice(`Stacks: merge stopped after ${merged} of ${this.plans.length}. ${e instanceof Error ? e.message : String(e)}`);
+			new Notice(`Stacks: merge stopped after ${merged} of ${plans.length}. ${e instanceof Error ? e.message : String(e)}`);
 		} finally {
 			this.busy = false;
 			this.close();

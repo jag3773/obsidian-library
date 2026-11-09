@@ -412,8 +412,10 @@ export class Plugin extends Component {
 	}
 }
 
+const stubEl = (): any => ({ empty() {}, createEl: () => stubEl() });
+
 export class Modal {
-	contentEl: any = { empty() {}, createEl() {} };
+	contentEl: any = stubEl();
 	constructor(public app: App) {}
 	open() {}
 	close() {}
@@ -454,8 +456,54 @@ export class AbstractInputSuggest<T> {
 	}
 }
 
+/** Test hooks: every Setting made, with its dropdown and buttons. A disabled button ignores clicks. */
+export interface MockButton {
+	text: string;
+	disabled: boolean;
+	click(): void;
+}
 export class Setting {
-	constructor(_el: unknown) {}
+	static all: Setting[] = [];
+	name = "";
+	dropdown?: { value: string; change(value: string): void };
+	buttons: MockButton[] = [];
+	constructor(_el: unknown) {
+		Setting.all.push(this);
+	}
+	setName(name: string) {
+		this.name = name;
+		return this;
+	}
+	setDesc() {
+		return this;
+	}
+	setHeading() {
+		return this;
+	}
+	addDropdown(cb: (d: any) => void) {
+		const d = { value: "", handler: (_v: string) => {}, change: (v: string) => d.handler(v) };
+		const api: any = {
+			addOption: () => api,
+			setValue: (v: string) => ((d.value = v), api),
+			onChange: (fn: (v: string) => void) => ((d.handler = fn), api),
+		};
+		this.dropdown = d;
+		cb(api);
+		return this;
+	}
+	addButton(cb: (b: any) => void) {
+		let handler = () => {};
+		const b: MockButton = { text: "", disabled: false, click: () => void (b.disabled || handler()) };
+		const api: any = {
+			setButtonText: (t: string) => ((b.text = t), api),
+			setCta: () => api,
+			setDisabled: (v: boolean) => ((b.disabled = v), api),
+			onClick: (fn: () => void) => ((handler = fn), api),
+		};
+		this.buttons.push(b);
+		cb(api);
+		return this;
+	}
 }
 
 export class BasesView extends Component {
