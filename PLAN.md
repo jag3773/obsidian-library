@@ -96,7 +96,7 @@ All paths are vault-relative unless marked absolute. "Example (ekfocus)" shows t
 |---|---|---|
 | Bibliography file, format, filter, automatic | `library.json`, CSL-JSON, none, off | Done: CSL-JSON, BibLaTeX or BibTeX export, optionally filtered by a property and rewritten automatically ([#19](https://github.com/jag3773/obsidian-stacks/issues/19)) |
 | Citation style | `chicago-author-date` | CSL style for the "copy formatted citation" command |
-| Health check scope | all | Which checks the report runs |
+| Health check: days in one status, statuses to watch | 365, `queued, reading, reviewing` | Done: when the report lists an item as stuck; 0 days turns that check off ([#28](https://github.com/jag3773/obsidian-stacks/issues/28)) |
 
 ### 4.4 Citekey pattern
 
@@ -159,7 +159,8 @@ All requests go through Obsidian's `requestUrl`, which works on mobile and avoid
 
 - **Copy formatted citation** and **Copy citekey as Pandoc citation** (`[@key]`).
 - Done: bibliography export to CSL-JSON (for Pandoc, Quarto and the Pandoc Reference List plugin), BibLaTeX or BibTeX, regenerated after reference changes with a debounce. Written without citation.js: the mapping is `src/citation.ts`, documented in docs/citation-fields.md.
-- **Health check** report note: notes without a citekey, duplicate citekeys or DOIs/ISBNs, `pdf` links that don't resolve, PDFs in the attachments folder with no note, items stuck in a status longer than a set number of days.
+- Done: **Health check** report note ([#28](https://github.com/jag3773/obsidian-stacks/issues/28)): broken frontmatter, missing or duplicate citekeys, citekey ≠ filename, `pdf` links that don't resolve, PDFs in the attachments folder with no note, possible duplicates, items in a watched status longer than N days (from the later of mtime and `added`), missing `type` and missing citation fields. Read-only; the repair (relink `pdf` to the PDF named after the citekey) is a separate, previewed command. Pure logic in `src/health.ts`; see docs/maintenance.md.
+- Done: **Duplicate review and merge** ([#26](https://github.com/jag3773/obsidian-stacks/issues/26)): exact matches only (DOI, ISBN, URL, or normalized title + year), each with its reason. Merge keeps the note named after its citekey (or the one chosen), unions list properties, fills empty ones, copies annotations and prose the kept note lacks, rewrites links to the other note in every Markdown file (`vault.process`), then trashes it. Previewed first; no journal (vault backup or git covers recovery). `src/duplicates.ts`, `src/links.ts`, `src/maintenance.ts`.
 - Done: **Import from Zotero (Better BibTeX JSON)**, the conversion this project used once, generalized ([#18](https://github.com/jag3773/obsidian-stacks/issues/18)). Matches by filename, citekey property, Zotero item key, then a unique title; adds properties without touching bodies; creates notes for unmatched items; previews first; reports, and can be undone. See docs/migrating-from-zotero.md.
 - Done: manual references and a reviewed metadata refresh ([#16](https://github.com/jag3773/obsidian-stacks/issues/16)); complete citation fields and creator roles ([#15](https://github.com/jag3773/obsidian-stacks/issues/15)).
 
