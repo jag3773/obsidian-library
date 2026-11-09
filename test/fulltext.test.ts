@@ -210,6 +210,33 @@ test("Find PDF does not save over a PDF linked while it downloaded", async () =>
 	assert.equal(app.vault.getFiles().filter((f) => f.extension === "pdf").length, 0);
 });
 
+test("Find PDF does not attach a download to a note whose DOI changed meanwhile", async () => {
+	let release!: () => void;
+	const gate = new Promise<void>((r) => (release = r));
+	const env = setup({}, [
+		...openAccess.slice(0, 2),
+		[
+			"https://europepmc.org/",
+			async () => {
+				await gate;
+				return pdfResponse();
+			},
+		],
+	]);
+	const { app } = env;
+	const note = app.vault.addFile("References/n.md", `---\n{"citekey":"n","doi":"10.1038/nature12373"}\n---\n`);
+	const pending = env.fullText.find(note);
+	await flush();
+	// The note is pointed at another work while the download is pending.
+	app.vault.write(note, `---\n{"citekey":"n","doi":"10.1000/other"}\n---\n`);
+	await flush();
+	release();
+	assert.equal(await pending, null);
+	assert.equal(app.vault.getFiles().filter((f) => f.extension === "pdf").length, 0);
+	assert.equal(fm(app, note).pdf, undefined);
+	assert.ok(Notice.messages.some((m) => /changed while the PDF downloaded/.test(m)));
+});
+
 // ---------------------------------------------------------------- the Web Clipper handoff
 
 test("a clipped note keeps its body, and its clipped properties stand in when the lookup fails", async () => {
