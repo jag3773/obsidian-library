@@ -11,3 +11,13 @@
   color: var(--text-error);
   min-height: 1.2em;
 }
+
+.stacks-conflict {
+  width: 100%;
+  margin: 0.5em 0 1em;
+}
+.stacks-conflict th,
+.stacks-conflict td {
+  padding: 0.25em 0.5em;
+  text-align: left;
+}

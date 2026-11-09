@@ -29,7 +29,7 @@ Before changing anything, write down each job Zotero does in your workflow and d
 | File PDFs | ZotFile / attachment renaming | Stacks files inbox PDFs into the attachments folder by citekey |
 | Collections, saved searches | Zotero UI | `collections` and `status` properties, plus Base views |
 | Reading queue | A "to read" collection or tag | `status: queued` |
-| Highlights into notes | Zotero Integration plugin | Planned: [#22](https://github.com/jag3773/obsidian-stacks/issues/22), [#29](https://github.com/jag3773/obsidian-stacks/issues/29) |
+| Highlights into notes | Zotero Integration plugin | Stacks: **Extract annotations**, and the tablet reading round trip ([docs/annotations.md](annotations.md)) |
 | Citations | Better BibTeX export | **Stacks: Export bibliography** (CSL-JSON, BibLaTeX or BibTeX), optionally automatic; in-editor citations are planned in [#20](https://github.com/jag3773/obsidian-stacks/issues/20) |
 | Full-text PDF search | Zotero index | Omnisearch + Text Extractor plugins ([#25](https://github.com/jag3773/obsidian-stacks/issues/25)) |
 | Shared group libraries | Zotero groups | Out of scope; share a vault instead |
@@ -165,7 +165,7 @@ What the import does, following what a real migration needed:
 - **Items with no note** get one (title, abstract and any Zotero child notes), unless you turn that off. An item whose title matches an existing note is listed as a probable duplicate inside Zotero instead.
 - **Group-library notes** aren't in a personal export; they're listed and left alone. So are notes whose item was deleted from Zotero.
 - **Attachments** are linked when the file is in the vault (found by filename). Zotero's web snapshots stay in Zotero's storage; anything else outside the vault is listed, so you can move it in and import again.
-- **Annotations** made in Zotero's PDF reader aren't in a Better BibTeX export. Highlights already in your notes are untouched; for the rest, use Zotero's **File → Export PDF…**, which writes the annotations into the PDF, and keep that PDF in the vault.
+- **Annotations** made in Zotero's PDF reader aren't in a Better BibTeX export. Highlights already in your notes are untouched; for the rest, use Zotero's **File → Export PDF…**, which writes the annotations into the PDF, keep that PDF in the vault, and run **Stacks: Extract annotations** on its note.
 
 The import writes a report note beside your references folder with every list, and a backup in the plugin's folder. **Stacks: Undo last Zotero import** restores every changed note exactly, renames notes back and moves created notes to the trash.
 

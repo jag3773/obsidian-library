@@ -83,35 +83,6 @@ function joinContent(fm: Record<string, unknown> | null, body: string): string {
 	return fm && Object.keys(fm).length ? `---\n${JSON.stringify(fm)}\n---\n${body}` : body;
 }
 
-/** Raw file access beneath the vault model, as Obsidian's DataAdapter. */
-export class Adapter {
-	files = new Map<string, string>();
-	writes: string[] = [];
-	/** Test hook: make rename fail (some platforms refuse to replace an existing file). */
-	failRename = false;
-	async exists(p: string) {
-		return this.files.has(normalizePath(p));
-	}
-	async read(p: string) {
-		const v = this.files.get(normalizePath(p));
-		if (v === undefined) throw new Error(`ENOENT ${p}`);
-		return v;
-	}
-	async write(p: string, data: string) {
-		this.writes.push(normalizePath(p));
-		this.files.set(normalizePath(p), data);
-	}
-	async rename(from: string, to: string) {
-		if (this.failRename) throw new Error("Destination file already exists!");
-		const v = await this.read(from);
-		this.files.delete(normalizePath(from));
-		this.files.set(normalizePath(to), v);
-	}
-	async remove(p: string) {
-		this.files.delete(normalizePath(p));
-	}
-}
-
 export class Vault extends Events {
 	adapter = new Adapter();
 	configDir = ".obsidian";
@@ -189,22 +160,34 @@ export class Vault extends Events {
 		this.contents.set(f, content);
 		this.app.metadataCache.index(f, content);
 	}
+	async process(f: TFile, fn: (data: string) => string): Promise<string> {
+		const next = fn(String(this.contents.get(f) ?? ""));
+		this.write(f, next);
+		this.trigger("modify", f);
+		return next;
+	}
+	async modify(f: TFile, content: string): Promise<void> {
+		this.write(f, content);
+		this.trigger("modify", f);
+	}
+	async createBinary(path: string, data: ArrayBuffer): Promise<TFile> {
+		const p = normalizePath(path);
+		if (this.files.has(p)) throw new Error("File already exists.");
+		const f = this.addFile(p, data);
+		f.stat = { ctime: Date.now(), mtime: Date.now(), size: data.byteLength };
+		this.trigger("create", f);
+		return f;
+	}
+	async modifyBinary(f: TFile, data: ArrayBuffer): Promise<void> {
+		this.contents.set(f, data);
+		f.stat = { ...f.stat, mtime: Date.now(), size: data.byteLength };
+		this.trigger("modify", f);
+	}
 	async read(f: TFile): Promise<string> {
 		return String(this.contents.get(f) ?? "");
 	}
 	async cachedRead(f: TFile): Promise<string> {
 		return this.read(f);
-	}
-	async modify(f: TFile, data: string): Promise<void> {
-		await Promise.resolve();
-		this.write(f, data);
-		this.trigger("modify", f);
-	}
-	async process(f: TFile, fn: (data: string) => string): Promise<string> {
-		await Promise.resolve();
-		const next = fn(String(this.contents.get(f) ?? ""));
-		this.write(f, next);
-		return next;
 	}
 	async readBinary(f: TFile): Promise<ArrayBuffer> {
 		const c = this.contents.get(f);
@@ -227,6 +210,44 @@ export class Vault extends Events {
 		this.trigger("delete", f);
 	}
 }
+
+export class FileSystemAdapter {
+	basePath: string | null = null;
+	getBasePath() {
+		return this.basePath ?? "";
+	}
+}
+
+/** Raw file access beneath the vault model, as Obsidian's DataAdapter. */
+export class Adapter extends FileSystemAdapter {
+	files = new Map<string, string>();
+	writes: string[] = [];
+	/** Test hook: make rename fail (some platforms refuse to replace an existing file). */
+	failRename = false;
+	async exists(p: string) {
+		return this.files.has(normalizePath(p));
+	}
+	async read(p: string) {
+		const v = this.files.get(normalizePath(p));
+		if (v === undefined) throw new Error(`ENOENT ${p}`);
+		return v;
+	}
+	async write(p: string, data: string) {
+		this.writes.push(normalizePath(p));
+		this.files.set(normalizePath(p), data);
+	}
+	async rename(from: string, to: string) {
+		if (this.failRename) throw new Error("Destination file already exists!");
+		const v = await this.read(from);
+		this.files.delete(normalizePath(from));
+		this.files.set(normalizePath(to), v);
+	}
+	async remove(p: string) {
+		this.files.delete(normalizePath(p));
+	}
+}
+
+export const Platform = { isDesktopApp: false, isMobile: false };
 
 export class MetadataCache extends Events {
 	cache = new Map<TFile, Record<string, unknown> | undefined>();

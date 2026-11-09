@@ -27,7 +27,7 @@ Every field goes through the property-name mapping in settings (**Library base**
 | `language` | Language code or name | `language` | `langid` |
 | `abstract` | Abstract or description | `abstract` | `abstract` |
 | `collections` | Topic notes this reference belongs to, as links | – | – |
-| `status`, `pdf`, `attachments`, `added`, `zotero` | Your workflow: reading status, files, date added, the Zotero item it came from | – | – |
+| `status`, `pdf`, `attachments`, `added`, `zotero`, `highlights`, `last_highlighted` | Your workflow: reading status, files, date added, the Zotero item it came from, annotation counts | – | – |
 
 Other properties on the note stay where they are and aren't exported.
 

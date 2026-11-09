@@ -449,11 +449,19 @@ export class Library {
 			year: fromNote.year ?? known.year,
 		};
 		await this.moveTo(attachment, this.s.attachmentsFolder, this.formatName(this.s.attachmentFilenameFormat, citekey, naming));
+		await this.linkAttachment(note, attachment, true);
+	}
+
+	/**
+	 * Add a link to the file to the note's attachments list (once), and make it the pdf when
+	 * `primary` and the note has none. The file keeps its name.
+	 */
+	async linkAttachment(note: TFile, attachment: TFile, primary = false): Promise<void> {
 		const link = this.linkTo(attachment, note);
 		this.assertActive();
 		await this.app.fileManager.processFrontMatter(note, (f: Frontmatter) => {
 			const pdfKey = this.prop("pdf");
-			if (attachment.extension === "pdf" && isEmpty(f[pdfKey])) f[pdfKey] = link;
+			if (primary && attachment.extension === "pdf" && isEmpty(f[pdfKey])) f[pdfKey] = link;
 			const listKey = this.prop("attachments");
 			const current = f[listKey];
 			// Keep a single existing value rather than replacing it.

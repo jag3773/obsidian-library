@@ -8,7 +8,7 @@
  * records each field there), then exact names, then common synonyms.
  */
 
-import { FIELD_LABELS, PROPERTY_KEYS, PropertyKey } from "./properties";
+import { DEFAULT_PROPERTY_NAMES, FIELD_LABELS, PROPERTY_KEYS, PropertyKey } from "./properties";
 
 /** A parsed .base file, after validateBase() has accepted its shape. */
 export interface BaseConfig {
@@ -253,6 +253,8 @@ export const SYNONYMS: Record<PropertyKey, string[]> = {
 	attachments: ["files", "attachment"],
 	added: ["created", "dateAdded", "date-added", "added_on"],
 	zotero: ["zoteroLink", "zoteroKey", "select"],
+	highlights: ["annotations", "highlightCount", "annotationCount"],
+	lastHighlighted: ["lastAnnotated", "last_annotated", "highlighted"],
 };
 
 const norm = (s: string) => s.toLowerCase().replace(/[\s_-]/g, "");
@@ -281,7 +283,7 @@ export function matchProperties(available: string[], displayNames: Record<string
 	for (const key of PROPERTY_KEYS) out[key] ??= take(byNorm.get(norm(key)));
 	for (const key of PROPERTY_KEYS) {
 		for (const syn of SYNONYMS[key]) out[key] ??= take(byNorm.get(norm(syn)));
-		out[key] ??= key;
+		out[key] ??= DEFAULT_PROPERTY_NAMES[key];
 	}
 	return out as Record<PropertyKey, string>;
 }

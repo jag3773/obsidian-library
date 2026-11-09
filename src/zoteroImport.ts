@@ -296,7 +296,7 @@ export function importReportMarkdown(r: ImportReport, plan: ImportPlan, choices:
 		Object.entries(r.unmappedFields).map(([f, n]) => `\`${f}\`: ${n} items`),
 		"These fields aren't part of the citation record (see docs/citation-fields.md)."
 	);
-	lines.push("", "## Annotations", "", "Better BibTeX exports don't include annotations made in Zotero's PDF reader. Highlights already in your notes (for example from the Zotero Integration plugin) are untouched. To bring the rest across, in Zotero choose File → Export PDF… on each annotated PDF, which writes the annotations into the file, and keep that PDF in your vault.");
+	lines.push("", "## Annotations", "", "Better BibTeX exports don't include annotations made in Zotero's PDF reader. Highlights already in your notes (for example from the Zotero Integration plugin) are untouched. To bring the rest across, in Zotero choose File → Export PDF… on each annotated PDF, which writes the annotations into the file, keep that PDF in your vault, and run **Stacks: Extract annotations** on its note.");
 	if (backup) lines.push("", "## Undo", "", `Run **Stacks: Undo last Zotero import** to restore every changed note, rename notes back and move created notes to the trash.`);
 	return lines.join("\n") + "\n";
 }

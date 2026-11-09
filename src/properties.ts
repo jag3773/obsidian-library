@@ -37,6 +37,8 @@ export const PROPERTY_KEYS = [
 	"attachments",
 	"added",
 	"zotero",
+	"highlights",
+	"lastHighlighted",
 ] as const;
 export type PropertyKey = (typeof PROPERTY_KEYS)[number];
 
@@ -72,6 +74,14 @@ export const FIELD_LABELS: Record<PropertyKey, string> = {
 	attachments: "Attachments",
 	added: "Date added",
 	zotero: "Zotero link",
+	highlights: "Highlights",
+	lastHighlighted: "Last highlighted",
+};
+
+/** The property name each field uses unless the vault maps it elsewhere. */
+export const DEFAULT_PROPERTY_NAMES: Record<PropertyKey, string> = {
+	...(Object.fromEntries(PROPERTY_KEYS.map((k) => [k, k])) as Record<PropertyKey, string>),
+	lastHighlighted: "last_highlighted",
 };
 
 /** Fields that hold people, as name lists (see src/names.ts). */
@@ -82,5 +92,3 @@ export type PeopleKey = (typeof PEOPLE_KEYS)[number];
 export const TEXT_KEYS = ["publisher", "place", "journal", "volume", "issue", "pages", "edition", "series", "issn", "language", "accessed"] as const;
 export type TextKey = (typeof TEXT_KEYS)[number];
 
-/** The plugin's default property names: each field under its own key. */
-export const DEFAULT_PROPERTY_NAMES = Object.fromEntries(PROPERTY_KEYS.map((k) => [k, k])) as Record<PropertyKey, string>;

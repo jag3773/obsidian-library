@@ -1,11 +1,14 @@
-import { Menu, Notice, Plugin, TAbstractFile, TFile, normalizePath, requestUrl } from "obsidian";
+import { Menu, Notice, Platform, Plugin, TAbstractFile, TFile, normalizePath, requestUrl } from "obsidian";
 import { FORMAT_LABELS, render } from "./bibliography";
+import { nodeHost } from "./desktop";
 import { BibliographyExporter } from "./export";
+import { Extractor, describeExtraction } from "./extract";
 import { Identifier, detectIdentifier } from "./identifiers";
 import { Inbox } from "./inbox";
 import { Cancelled, Library } from "./library";
 import { Fetcher } from "./metadata/http";
 import { lookup } from "./metadata/lookup";
+import { Host, RoundTrip, runPreExtraction, toArrayBuffer } from "./roundtrip";
 import { LibrarySettingTab, LibrarySettings, withDefaults } from "./settings";
 import { AddReferenceModal } from "./ui/AddReferenceModal";
 import { ReferenceData } from "./metadata/types";
@@ -14,12 +17,14 @@ import { RefreshModal } from "./ui/RefreshModal";
 import { ImportModal } from "./ui/ImportModal";
 import { ReportModal } from "./ui/ReportModal";
 import { ZoteroImporter } from "./zoteroImport";
+import { ConflictModal } from "./ui/ConflictModal";
 
 const PREFIX = "Stacks";
 const COMPLETE_DEBOUNCE_MS = 2000;
 const INBOX_SETTLE_MS = 750;
 const BUSY_SETTLE_MS = 1500;
 const EXPORT_DEBOUNCE_MS = 5000;
+const PDF_SAVE_DEBOUNCE_MS = 2000;
 
 const sameId = (a: Identifier | null, b: Identifier | null) => !!a && !!b && a.kind === b.kind && a.value === b.value;
 
@@ -29,6 +34,10 @@ export default class LibraryPlugin extends Plugin {
 	inbox!: Inbox;
 	exporter!: BibliographyExporter;
 	importer!: ZoteroImporter;
+	extractor!: Extractor;
+	/** Desktop only; null on mobile. */
+	roundTrip: RoundTrip | null = null;
+	private host: Host | null = null;
 	private fetcher!: Fetcher;
 	/** The pending automatic bibliography export, if any. */
 	private exportTimer: number | null = null;
@@ -40,6 +49,18 @@ export default class LibraryPlugin extends Plugin {
 	private timers = new Set<number>();
 	/** Pending automatic completions by path, with the identifier they were scheduled for. */
 	private completeTimers = new Map<string, { timer: number; id: Identifier }>();
+	/** Last seen status of each reference note, to notice a change to the send status. */
+	private statuses = new Map<string, string>();
+	/** Pending extract-on-save runs by PDF path. */
+	private pdfTimers = new Map<string, number>();
+	/** Tablet folder the watcher was started for. */
+	private watchedFolder = "";
+	private layoutReady = false;
+
+	/** File-system access for the round trip and the pre-extraction command. Desktop only. */
+	protected createHost(): Host | null {
+		return Platform.isDesktopApp ? nodeHost(this.app) : null;
+	}
 
 	async onload(): Promise<void> {
 		this.alive = true;
@@ -56,6 +77,20 @@ export default class LibraryPlugin extends Plugin {
 			this.settings.lastImportBackup = path;
 			await this.saveSettings();
 		});
+		this.extractor = new Extractor(this.app, this.library, () => this.settings, () => this.alive);
+		this.host = this.createHost();
+		if (this.host)
+			this.roundTrip = new RoundTrip(
+				this.app,
+				this.library,
+				this.extractor,
+				() => this.settings,
+				() => this.saveSettings(),
+				this.host,
+				{ notice: (m) => new Notice(m), conflict: (info) => ConflictModal.ask(this.app, info) },
+				(path) => this.settle(path),
+				() => this.alive
+			);
 
 		this.addSettingTab(new LibrarySettingTab(this.app, this));
 		this.addRibbonIcon("library", "Add reference", () => this.openAddReference());
@@ -136,16 +171,48 @@ export default class LibraryPlugin extends Plugin {
 				);
 			})
 		);
+		this.addCommand({
+			id: "extract-annotations",
+			name: "Extract annotations for current note",
+			checkCallback: (checking) => {
+				const note = this.activeReference();
+				if (!note) return false;
+				if (!checking) void this.extractNow(note);
+				return true;
+			},
+		});
+		this.addCommand({
+			id: "send-to-tablet",
+			name: "Send PDF to tablet folder",
+			checkCallback: (checking) => {
+				const note = this.activeReference();
+				if (!note || !this.roundTrip?.folder()) return false;
+				if (!checking) void this.sendToTablet(note, true);
+				return true;
+			},
+		});
+		this.addCommand({
+			id: "check-tablet-folder",
+			name: "Check tablet folder for returned PDFs",
+			checkCallback: (checking) => {
+				if (!this.roundTrip?.folder()) return false;
+				if (!checking) this.roundTrip.checkAll(true).catch((e) => this.report(e));
+				return true;
+			},
+		});
 
 		// Register after the initial index so existing files don't fire "create".
 		this.app.workspace.onLayoutReady(() => {
+			for (const f of this.library.referenceFiles()) this.statuses.set(f.path, this.statusOf(f));
 			this.registerEvent(this.app.vault.on("create", (f) => this.onCreate(f)));
 			this.registerEvent(
 				this.app.metadataCache.on("changed", (file) => {
 					this.scheduleCompletion(file);
 					if (this.library.isReference(file)) this.scheduleExport();
+					this.onStatusChange(file);
 				})
 			);
+			this.registerEvent(this.app.vault.on("modify", (f) => this.onPdfModified(f)));
 			// A pending completion belongs to the path it was scheduled for.
 			this.registerEvent(
 				this.app.vault.on("rename", (f, oldPath) => {
@@ -153,20 +220,44 @@ export default class LibraryPlugin extends Plugin {
 					// Into, within or out of the references folder.
 					const folder = normalizePath(this.settings.referencesFolder);
 					if (f instanceof TFile && f.extension === "md" && (this.library.isReference(f) || oldPath.startsWith(`${folder}/`))) this.scheduleExport();
+					const st = this.statuses.get(oldPath);
+					this.statuses.delete(oldPath);
+					if (st !== undefined) this.statuses.set(f.path, st);
+					if (f instanceof TFile) void this.roundTrip?.onVaultRename(f, oldPath);
 				})
 			);
 			this.registerEvent(
 				this.app.vault.on("delete", (f) => {
 					this.cancelCompletion(f.path);
 					if (f instanceof TFile && f.extension === "md" && this.library.inFolder(f, this.settings.referencesFolder)) this.scheduleExport();
+					this.statuses.delete(f.path);
 				})
 			);
+			this.layoutReady = true;
+			this.startRoundTrip();
+		});
+	}
+
+	/** Scan the tablet folder and watch it, when one is set. Called again when the setting changes. */
+	private startRoundTrip(): void {
+		const rt = this.roundTrip;
+		if (!rt) return;
+		const folder = rt.folder() ?? "";
+		if (folder === this.watchedFolder) return;
+		this.watchedFolder = folder;
+		rt.stop();
+		if (!folder) return;
+		rt.startWatching();
+		rt.checkAll().catch((e) => {
+			if (!(e instanceof Cancelled)) new Notice(`${PREFIX}: tablet folder: ${e instanceof Error ? e.message : String(e)}`);
 		});
 	}
 
 	onunload(): void {
 		this.alive = false;
 		this.exportTimer = null;
+		this.roundTrip?.stop();
+		this.pdfTimers.clear();
 		for (const t of this.timers) window.clearTimeout(t);
 		this.timers.clear();
 		this.completeTimers.clear();
@@ -178,6 +269,8 @@ export default class LibraryPlugin extends Plugin {
 
 	async saveSettings(): Promise<void> {
 		await this.saveData(this.settings);
+		// Follow a changed tablet folder once the layout (and so the round trip) has started.
+		if (this.alive && this.layoutReady) this.startRoundTrip();
 	}
 
 	/** setTimeout that unload cancels, and that never runs after unload. */
@@ -506,4 +599,102 @@ export default class LibraryPlugin extends Plugin {
 			this.report(e);
 		}
 	}
+	/** The active reference note, or the reference note of the active PDF. */
+	private activeReference(): TFile | null {
+		const file = this.app.workspace.getActiveFile();
+		if (!file) return null;
+		if (this.library.isReference(file)) return file;
+		if (file.extension === "pdf") return this.extractor.notesFor(file)[0] ?? null;
+		return null;
+	}
+
+	private statusOf(file: TFile): string {
+		return String(this.library.frontmatter(file)[this.library.prop("status")] ?? "").trim();
+	}
+
+	/** Send the PDF when a note's status changes to the send status. */
+	private onStatusChange(file: TFile): void {
+		if (!this.library.isReference(file)) return;
+		const status = this.statusOf(file);
+		const prev = this.statuses.get(file.path);
+		this.statuses.set(file.path, status);
+		const send = this.settings.sendStatus.trim();
+		if (!send || status !== send || prev === send || !this.roundTrip?.folder()) return;
+		void this.sendToTablet(file, false);
+	}
+
+	async sendToTablet(note: TFile, explicit: boolean): Promise<void> {
+		if (!this.roundTrip) return;
+		try {
+			const message = await this.roundTrip.send(note);
+			new Notice(`${PREFIX}: ${message}`);
+		} catch (e) {
+			if (e instanceof Cancelled) return;
+			new Notice(`${PREFIX}: couldn't send ${note.basename}: ${e instanceof Error ? e.message : String(e)}`);
+			if (explicit) console.warn(`[${PREFIX}]`, e);
+		}
+	}
+
+	/** The command: optional pre-extraction command (desktop), then extraction. */
+	async extractNow(note: TFile): Promise<void> {
+		await this.guard(note, async () => {
+			const pdf = this.extractor.pdfFor(note);
+			if (!pdf) throw new Error(`${note.basename} has no PDF linked in its ${this.library.prop("pdf")} property.`);
+			const pending = new Notice(`${PREFIX}: extracting annotations from ${pdf.name}…`, 0);
+			try {
+				let bytes: ArrayBuffer | undefined;
+				const command = this.settings.preExtractionCommand.trim();
+				if (command && this.host) {
+					try {
+						const before = new Uint8Array(await this.app.vault.readBinary(pdf));
+						const after = await runPreExtraction(this.host, command, before, pdf.name);
+						if (after && !sameBytes(before, after)) {
+							// The command can run for minutes; stop if unloaded, and don't overwrite a PDF that changed meanwhile.
+							if (!this.alive) throw new Cancelled();
+							if (!sameBytes(before, new Uint8Array(await this.app.vault.readBinary(pdf))))
+								throw new Error(`${pdf.name} changed while the pre-extraction command ran`);
+							bytes = toArrayBuffer(after);
+							this.settle(pdf.path);
+							await this.app.vault.modifyBinary(pdf, bytes);
+						}
+					} catch (e) {
+						if (e instanceof Cancelled) throw e;
+						new Notice(`${PREFIX}: ${e instanceof Error ? e.message : String(e)}. Extracting from the PDF as it is.`);
+					}
+				}
+				const result = await this.extractor.extract(note, bytes);
+				new Notice(`${PREFIX}: ${describeExtraction(result)}`);
+			} finally {
+				pending.hide();
+			}
+		});
+	}
+
+	/** Extract on save: a PDF in the attachments folder changed outside Stacks. */
+	private onPdfModified(f: TAbstractFile): void {
+		if (!(f instanceof TFile) || f.extension !== "pdf" || !this.settings.extractOnPdfSave) return;
+		if (this.busy.has(f.path) || !this.library.inFolder(f, this.settings.attachmentsFolder)) return;
+		const pending = this.pdfTimers.get(f.path);
+		if (pending !== undefined) this.clearLater(pending);
+		const path = f.path;
+		this.pdfTimers.set(
+			path,
+			this.later(() => {
+				this.pdfTimers.delete(path);
+				if (!this.library.exists(f) || this.busy.has(f.path)) return;
+				for (const note of this.extractor.notesFor(f)) {
+					void this.guard(note, async () => {
+						const r = await this.extractor.extract(note);
+						if (r.changed) new Notice(`${PREFIX}: ${describeExtraction(r)}`);
+					});
+				}
+			}, PDF_SAVE_DEBOUNCE_MS)
+		);
+	}
+}
+
+function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+	if (a.length !== b.length) return false;
+	for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+	return true;
 }
