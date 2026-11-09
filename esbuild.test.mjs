@@ -14,5 +14,6 @@ await esbuild.build({
   alias: { obsidian: "./test/mocks/obsidian.ts" },
   // Real npm packages used only by tests are loaded by Node, not bundled.
   external: ["yaml", "linkedom", "pdfjs-dist"],
+  loader: { ".csl": "text", ".xml": "text" },
   logLevel: "warning",
 });

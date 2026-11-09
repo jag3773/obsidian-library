@@ -13,6 +13,8 @@ const ctx = await esbuild.context({
   sourcemap: prod ? false : "inline",
   treeShaking: true,
   outfile: "main.js",
+  // The bundled CSL style and locale (src/csl) are imported as text.
+  loader: { ".csl": "text", ".xml": "text" },
 });
 
 if (prod) {

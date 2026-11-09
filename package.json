@@ -31,5 +31,8 @@
     "typescript": "^5.4.5",
     "typescript-eslint": "^8.72.1",
     "yaml": "^2.9.1"
+  },
+  "dependencies": {
+    "citeproc": "2.4.63"
   }
 }

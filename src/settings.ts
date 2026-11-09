@@ -2,6 +2,8 @@ import { App, Platform, PluginSettingTab, Setting, TFile, normalizePath, parseYa
 import { BaseConfig, baseDisplayNames, baseFolder, basePropertyNames, matchProperties, starterBase, validateBase } from "./bases";
 import { BibFormat, FORMAT_EXTENSIONS, FORMAT_LABELS, parseFilter } from "./bibliography";
 import { parsePattern } from "./citekey";
+import { CITE_FORMAT_LABELS, CiteFormat } from "./cite";
+import { displayCitationSettings } from "./ui/CitationSettings";
 import { DEFAULT_IMPORT_CHOICES, ImportChoices } from "./zotero";
 import type LibraryPlugin from "./main";
 import { PathSuggest, filePaths, folderPaths } from "./ui/PathSuggest";
@@ -43,6 +45,16 @@ export interface LibrarySettings {
 	zoteroImport: ImportChoices;
 	/** Backup of the last Zotero import, for undo. */
 	lastImportBackup: string;
+
+	// Citations
+	/** Vault path of a .csl style; empty uses the bundled Chicago author-date style. */
+	citationStyle: string;
+	/** Vault path of a CSL locale file; empty uses the bundled en-US locale. */
+	citationLocale: string;
+	/** How the insert citation command writes a citation. */
+	citeFormat: CiteFormat;
+	/** Ask for a page or other locator after picking a reference. */
+	citeAskLocator: boolean;
 
 	// Annotations
 	/** Heading the generated annotations go under; the plugin owns only what is between its markers. */
@@ -93,6 +105,10 @@ export const DEFAULT_SETTINGS: LibrarySettings = {
 	autoExport: false,
 	zoteroImport: { ...DEFAULT_IMPORT_CHOICES },
 	lastImportBackup: "",
+	citationStyle: "",
+	citationLocale: "",
+	citeFormat: "pandoc",
+	citeAskLocator: false,
 	annotationsHeading: "## Annotations",
 	colorMap: DEFAULT_COLOR_MAP,
 	statusAfterExtraction: "",
@@ -118,6 +134,9 @@ export function withDefaults(saved: Partial<LibrarySettings> | null | undefined)
 	if (typeof s.libraryBase !== "string") s.libraryBase = "";
 	for (const k of ["annotationsHeading", "colorMap", "statusAfterExtraction", "preExtractionCommand", "tabletFolder", "sendStatus", "returnStatus"] as const)
 		if (typeof s[k] !== "string") s[k] = DEFAULT_SETTINGS[k];
+	if (typeof s.citationStyle !== "string") s.citationStyle = "";
+	if (typeof s.citationLocale !== "string") s.citationLocale = "";
+	if (!(s.citeFormat in CITE_FORMAT_LABELS)) s.citeFormat = DEFAULT_SETTINGS.citeFormat;
 	const sent = s.tabletSent as unknown;
 	s.tabletSent = sent && typeof sent === "object" && !Array.isArray(sent) ? { ...(sent as Record<string, SentRecord>) } : {};
 	// An empty references folder would make every note in the vault a "reference" that
@@ -355,6 +374,7 @@ export class LibrarySettingTab extends PluginSettingTab {
 		});
 		new Setting(containerEl).addButton((b) => b.setButtonText("Export now").onClick(() => void this.plugin.exportBibliography(true)));
 
+		displayCitationSettings(this.app, containerEl, s, save);
 		this.displayAnnotations(containerEl);
 		this.displayBase(containerEl);
 	}
