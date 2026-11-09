@@ -10,7 +10,7 @@ If Obsidian is where you think, it should be enough to manage the sources behind
 
 [Get started](#install-beta) · [Available today](#available-today) · [The road ahead](#the-road-ahead)
 
-> **Early beta · 0.2.x.** Capture, metadata lookup, manual references, citekeys, PDF filing, library views, annotation extraction, a tablet reading round trip, Zotero import, and bibliography export are available now. Stacks is still growing toward a complete reference manager. In-editor citations are future work.
+> **Early beta · 0.3.x.** Capture, metadata lookup, manual references, citekeys, PDF filing, library views, annotation extraction, a tablet reading round trip, Zotero import, and bibliography export are available now. Stacks is still growing toward a complete reference manager. In-editor citations are future work.
 
 ## Let your reading become part of your thinking
 

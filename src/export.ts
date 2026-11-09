@@ -52,7 +52,7 @@ export class BibliographyExporter {
 	/** Export the library (filtered by the settings) to the configured file. */
 	async export(path = this.settings().exportPath, format = this.settings().exportFormat): Promise<ExportResult> {
 		const target = normalizePath(path.trim());
-		if (!target || target === "/") throw new Error("Set a bibliography file in Library's settings first.");
+		if (!target || target === "/") throw new Error("Set a bibliography file in the Stacks settings first.");
 		const bib = this.build();
 		const slash = target.lastIndexOf("/");
 		if (slash > 0) await this.library.ensureFolder(target.slice(0, slash));

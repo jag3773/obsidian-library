@@ -1,6 +1,6 @@
 {
   "name": "obsidian-stacks",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A research library for Obsidian.",
   "main": "main.js",
   "scripts": {
