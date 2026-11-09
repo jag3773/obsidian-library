@@ -19,6 +19,7 @@ import { ReportModal } from "./ui/ReportModal";
 import { ZoteroImporter } from "./zoteroImport";
 import { ConflictModal } from "./ui/ConflictModal";
 import { asText } from "./text";
+import { registerBatchCommands } from "./batchCommands";
 
 const PREFIX = "Stacks";
 const COMPLETE_DEBOUNCE_MS = 2000;
@@ -26,6 +27,8 @@ const INBOX_SETTLE_MS = 750;
 const BUSY_SETTLE_MS = 1500;
 const EXPORT_DEBOUNCE_MS = 5000;
 const PDF_SAVE_DEBOUNCE_MS = 2000;
+/** Wait after startup before processing the inbox, so a sync client can bring files in first. */
+const STARTUP_INBOX_MS = 5000;
 
 const sameId = (a: Identifier | null, b: Identifier | null) => !!a && !!b && a.kind === b.kind && a.value === b.value;
 
@@ -201,6 +204,8 @@ export default class LibraryPlugin extends Plugin {
 				return true;
 			},
 		});
+		// Batch edits, the library base command and the Stacks batch view for Bases (#27).
+		registerBatchCommands(this, this.fetcher, (path) => this.settle(path));
 
 		// Register after the initial index so existing files don't fire "create".
 		this.app.workspace.onLayoutReady(() => {
@@ -236,6 +241,8 @@ export default class LibraryPlugin extends Plugin {
 			);
 			this.layoutReady = true;
 			this.startRoundTrip();
+			// Files that reached the inbox while Obsidian was closed, or offline clips left to retry (#30).
+			if (this.settings.processInboxAutomatically) this.later(() => void this.processWholeInbox(true), STARTUP_INBOX_MS);
 		});
 	}
 
@@ -337,7 +344,7 @@ export default class LibraryPlugin extends Plugin {
 			}
 			// Duplicate check and creation happen together, so overlapping captures can't both create.
 			const { file, existing } = await this.library.exclusive(async () => {
-				const found = this.library.findExisting(data);
+				const found = await this.library.findExistingOnDisk(data);
 				if (found) return { file: found, existing: true };
 				const created = await this.library.create(data, this.settings.defaultStatus);
 				this.settle(created.path);
@@ -365,10 +372,11 @@ export default class LibraryPlugin extends Plugin {
 		}, INBOX_SETTLE_MS);
 	}
 
-	private async processWholeInbox(): Promise<void> {
+	/** Process every file in the inbox. `quiet` (at startup) says nothing when it is empty. */
+	private async processWholeInbox(quiet = false): Promise<void> {
 		const files = this.app.vault.getFiles().filter((f) => this.inbox.accepts(f));
 		if (!files.length) {
-			new Notice(`${PREFIX}: inbox is empty.`);
+			if (!quiet) new Notice(`${PREFIX}: inbox is empty.`);
 			return;
 		}
 		let done = 0;
@@ -509,7 +517,7 @@ export default class LibraryPlugin extends Plugin {
 	async createManualReference(data: ReferenceData): Promise<TFile | undefined> {
 		try {
 			const { file, existing } = await this.library.exclusive(async () => {
-				const found = this.library.findExisting(data);
+				const found = await this.library.findExistingOnDisk(data);
 				if (found) return { file: found, existing: true };
 				const created = await this.library.create(data, this.settings.defaultStatus);
 				this.settle(created.path);

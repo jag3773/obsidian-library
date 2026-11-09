@@ -394,6 +394,11 @@ export class Plugin extends Component {
 	addRibbonIcon() {
 		return {};
 	}
+	basesViews = new Map<string, any>();
+	registerBasesView(id: string, registration: any) {
+		this.basesViews.set(id, registration);
+		return true;
+	}
 	async loadData() {
 		return this.data;
 	}
@@ -436,4 +441,21 @@ export class AbstractInputSuggest<T> {
 
 export class Setting {
 	constructor(_el: unknown) {}
+}
+
+export class BasesView extends Component {
+	app!: App;
+	data: { data: { file: TFile }[] } = { data: [] };
+	constructor(_controller: unknown) {
+		super();
+	}
+}
+export class QueryController extends Component {}
+/** Test hook: the app version requireApiVersion compares against. */
+export const api = { version: "1.10.0" };
+export function requireApiVersion(version: string): boolean {
+	const parts = (v: string) => v.split(".").map(Number);
+	const [a, b] = [parts(api.version), parts(version)];
+	for (let i = 0; i < 3; i++) if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) > (b[i] ?? 0);
+	return true;
 }

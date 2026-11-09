@@ -9,6 +9,7 @@ import { ReferenceData } from "./metadata/types";
 import { readPdf } from "./pdf";
 import { PropertyKey } from "./properties";
 import { LibrarySettings } from "./settings";
+import { NetworkTracker } from "./sync";
 
 /** Handles files that land in the inbox folder. */
 export class Inbox {
@@ -48,7 +49,13 @@ export class Inbox {
 			new Notice(`Stacks: no URL found in ${file.name}; left in the inbox.`);
 			return null;
 		}
-		const data = await lookup(this.fetch, { kind: "url", value: url }, { crossrefMailto: s.crossrefMailto });
+		const net = new NetworkTracker();
+		const data = await lookup(net.wrap(this.fetch), { kind: "url", value: url }, { crossrefMailto: s.crossrefMailto });
+		// Offline (no request got an answer): keep the clip as it is, for Process inbox to retry.
+		if (!data && net.unreachable) {
+			new Notice(`Stacks: couldn't reach the network for ${file.name}; left in the inbox to retry.`);
+			return null;
+		}
 		// Effective metadata: the lookup result with the clip's URL kept. What the clipper saved
 		// (read in the browser, so it works on sites that block the plugin's request) fills any
 		// gaps, or stands in when the lookup failed. The URL ends up in the configured url
@@ -58,11 +65,12 @@ export class Inbox {
 		return this.library.exclusive(async () => {
 			if (!this.stillWaiting(file)) return null;
 			// Check the enriched identifiers and the clip's own URL, whether or not the lookup worked.
-			const dup = this.library.findExisting(basis, file) ?? this.library.findExisting({ url }, file);
+			const dup = (await this.library.findExistingOnDisk(basis, file)) ?? (await this.library.findExistingOnDisk({ url }, file));
 			if (dup) {
 				new Notice(`Stacks: ${file.name} matches existing ${dup.basename}; left in the inbox.`);
 				return null;
 			}
+			if (!this.stillWaiting(file)) return null;
 			// The clip keeps the URL property it came from, so later captures of the same original
 			// URL still match after the mapped url becomes the canonical one.
 			const moved = await this.library.complete(file, basis, s.clipStatus, [url], data ? fm : undefined);
@@ -77,14 +85,21 @@ export class Inbox {
 		let data: ReferenceData | null = null;
 		let pdfTitle: string | undefined;
 		let pdfAuthor: string | undefined;
+		const net = new NetworkTracker();
 		try {
 			const pdf = await readPdf(this.app, file);
 			pdfTitle = pdf.title;
 			pdfAuthor = pdf.author;
 			const id = findIdentifierInText(pdf.text);
-			if (id) data = await lookup(this.fetch, id, { crossrefMailto: s.crossrefMailto });
+			if (id) data = await lookup(net.wrap(this.fetch), id, { crossrefMailto: s.crossrefMailto });
 		} catch (e) {
 			console.warn("[stacks] could not read PDF", file.path, e);
+		}
+		// The PDF names a DOI or ISBN but the network is down: retry later rather than file it
+		// under its filename.
+		if (!data && net.unreachable) {
+			new Notice(`Stacks: couldn't reach the network for ${file.name}; left in the inbox to retry.`);
+			return null;
 		}
 		if (!data) {
 			const authors = pdfAuthor ? pdfAuthor.split(/\s*(?:;|,| and )\s*/).filter(Boolean) : [];
@@ -102,12 +117,20 @@ export class Inbox {
 		const naming = { title: found.title, familyNames: found.familyNames, year: found.year };
 		return this.library.exclusive(async () => {
 			if (!this.stillWaiting(file)) return null;
-			const dup = this.library.findExisting(found);
+			const dup = await this.library.findExistingOnDisk(found);
 			if (dup) {
+				// Filed already, by another device or an earlier run: never add a second copy.
+				const same = await this.library.alreadyFiled(dup, file, naming);
+				if (same) {
+					new Notice(`Stacks: ${file.name} is already filed as ${same.path}; left in the inbox.`);
+					return null;
+				}
+				if (!this.stillWaiting(file)) return null;
 				await this.library.attach(dup, file, naming);
 				new Notice(`Stacks: attached ${file.name} to existing ${dup.basename}`);
 				return dup;
 			}
+			if (!this.stillWaiting(file)) return null;
 			const note = await this.library.create(found, s.defaultStatus);
 			await this.library.attach(note, file, naming);
 			new Notice(`Stacks: created ${note.basename} from ${found.source}`);

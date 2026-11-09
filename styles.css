@@ -23,3 +23,15 @@
   padding: 0.25em 0.5em;
   text-align: left;
 }
+
+/* Stacks batch view in a Base. */
+.stacks-batch-view-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1em;
+  padding: 0.5em 0;
+}
+.stacks-batch-view-list {
+  margin: 0;
+}
