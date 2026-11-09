@@ -19,9 +19,9 @@
  * - For a whole Zotero library, group-library notes aren't in a personal export: they're
  *   reported, not guessed at, and notes whose item is gone are listed.
  */
-import { disambiguate, generateCitekey } from "../citekey";
+import { disambiguate, familyFromFullName, generateCitekey } from "../citekey";
 import { canonicalIsbn, normalizeDoi } from "../identifiers";
-import { ReferenceData } from "../metadata/types";
+import { ReferenceData, yearFrom } from "../metadata/types";
 import { Diagnostic, ImportRecord, str } from "./record";
 
 // Vault side -------------------------------------------------------------------------------
@@ -167,10 +167,14 @@ export interface ImportReport {
 }
 
 const lower = (s: string) => s.trim().toLowerCase();
+/** A property value without [[ ]] or an alias. */
+const unlinked = (v: unknown) => (str(v) ?? "").replace(/^\[\[/, "").replace(/\]\]$/, "").split("|")[0].trim();
 const titleKey = (s: string) => lower(s).replace(/\s+/g, " ");
 const H1 = /^# (.+)$/m;
 const ZOTERO_LINK = /zotero:\/\/select\/(library|groups\/\d+)\/items\/([A-Z0-9]{8})/;
 const DEFAULT_PATTERN = "auth.lower + shorttitle(3, 3) + year";
+/** A Zotero item with its library, as zotero://select links write it: "library/ABCD2345", "groups/123/ABCD2345". */
+const zoteroId = (r: ImportRecord) => (r.zoteroKey ? `${r.zoteroLibrary ?? "library"}/${r.zoteroKey}` : undefined);
 
 /**
  * True when the note's "## Annotations" section holds highlights: quoted passages, callouts
@@ -284,6 +288,18 @@ export function planRecords(records: ImportRecord[], notes: VaultNote[], o: Impo
 		report.groupNotes.push(n.path);
 		return false;
 	});
+	// Whether a note with the record's title is the same work: false when its year or first
+	// creator's family name differs, true when both agree, undefined when either is unknown.
+	const sameWork = (data: ReferenceData, n: VaultNote): boolean | undefined => {
+		const fm = readable.get(n)!;
+		const year = yearFrom(str(fm[p("year")]) ?? str(fm[p("published")]));
+		const people = [fm[p("authors")], fm[p("editors")]].map((v): unknown[] => (Array.isArray(v) ? (v as unknown[]) : v === undefined || v === null ? [] : [v])).find((l) => l.length);
+		const first = people?.map((v) => unlinked(v)).find(Boolean);
+		const family = first ? lower(familyFromFullName(first)) : undefined;
+		const want = data.familyNames[0] ? lower(data.familyNames[0]) : undefined;
+		if ((year && data.year && year !== data.year) || (family && want && family !== want)) return false;
+		return year && data.year && family && want ? true : undefined;
+	};
 	const byBasename = new Map<string, VaultNote>();
 	const byCitekeyProp = new Map<string, VaultNote>();
 	const byZoteroKey = new Map<string, VaultNote[]>();
@@ -295,8 +311,8 @@ export function planRecords(records: ImportRecord[], notes: VaultNote[], o: Impo
 		byBasename.set(lower(n.basename), n);
 		const ck = str(fm[p("citekey")]);
 		if (ck && !byCitekeyProp.has(lower(ck))) byCitekeyProp.set(lower(ck), n);
-		const link = zoteroLinks(n).find((l) => l[1] === "library");
-		if (link) add(byZoteroKey, link[2], n);
+		// Keyed with the library: a group item never matches a personal item with the same key.
+		for (const id of new Set(zoteroLinks(n).map((l) => `${l[1]}/${l[2]}`))) add(byZoteroKey, id, n);
 		for (const id of identifiers({ doi: str(fm[p("doi")]), isbn: str(fm[p("isbn")]) })) add(byIdentifier, id, n);
 		const title = str(fm[p("title")]) ?? n.body.match(H1)?.[1];
 		if (title) add(byTitle, titleKey(title), n);
@@ -320,8 +336,9 @@ export function planRecords(records: ImportRecord[], notes: VaultNote[], o: Impo
 	for (const r of records) if (r.citekey) claim(r, byBasename.get(lower(r.citekey)), "filename");
 	for (const r of records) if (r.citekey) claim(r, byCitekeyProp.get(lower(r.citekey)), "citekey property");
 	for (const r of records) {
-		if (!r.zoteroKey) continue;
-		const list = byZoteroKey.get(r.zoteroKey) ?? [];
+		const id = zoteroId(r);
+		if (!id) continue;
+		const list = byZoteroKey.get(id) ?? [];
 		claim(r, list.find((n) => !taken.has(n)), "Zotero link");
 	}
 	// A DOI or ISBN only one record and one note carry, and only when the record's own citekey note doesn't exist.
@@ -333,21 +350,39 @@ export function planRecords(records: ImportRecord[], notes: VaultNote[], o: Impo
 			if (list.length === 1 && !taken.has(list[0])) claim(r, list[0], "identifier");
 		}
 	}
+	// A record without a citekey or Zotero key: the note an earlier import made for it, found by the key the
+	// pattern makes (as it was, or with a letter added) or by title, year and first creator.
+	const generatedKey = (r: ImportRecord) => generateCitekey({ title: r.data.title, authors: r.data.familyNames, year: r.data.year }, o.citekeyPattern || DEFAULT_PATTERN);
+	for (const r of records) {
+		const t = r.data.title;
+		if (r.citekey || r.zoteroKey || !t) continue;
+		const key = lower(generatedKey(r));
+		const ofKey = (k: string | undefined) => !!key && !!k && (lower(k) === key || (lower(k).startsWith(key) && /^[a-z]{1,2}$/.test(lower(k).slice(key.length))));
+		const candidates = (byTitle.get(titleKey(t)) ?? []).filter((n) => !taken.has(n));
+		const keyed = candidates.filter((n) => ofKey(n.basename) || ofKey(str(readable.get(n)![p("citekey")])));
+		if (keyed.length === 1) {
+			claim(r, keyed[0], ofKey(keyed[0].basename) ? "filename" : "citekey property");
+			continue;
+		}
+		const same = candidates.filter((n) => sameWork(r.data, n) === true);
+		if (same.length === 1) claim(r, same[0], "title");
+	}
 	for (const r of records) {
 		const t = r.data.title;
 		if (!t || titleCount.get(titleKey(t)) !== 1) continue;
-		const list = (byTitle.get(titleKey(t)) ?? []).filter((n) => !taken.has(n));
+		// A note whose year or first creator differs is another work with the same title.
+		const list = (byTitle.get(titleKey(t)) ?? []).filter((n) => !taken.has(n) && sameWork(r.data, n) !== false);
 		// Only a title found once, and only when the record's own citekey note doesn't exist.
 		if (list.length === 1 && !(r.citekey && byBasename.has(lower(r.citekey)))) claim(r, list[0], "title");
 	}
 
 	// Notes left over: duplicates of a matched note, group items, or deleted from Zotero.
-	const byKey = new Map(records.filter((r) => r.zoteroKey).map((r) => [r.zoteroKey!, r]));
+	const byKey = new Map(records.filter((r) => r.zoteroKey).map((r) => [zoteroId(r)!, r]));
 	for (const n of sortedNotes) {
 		if (taken.has(n)) continue;
 		const link = zoteroLinks(n).find((l) => l[1] === "library");
 		if (!link) continue;
-		const r = byKey.get(link[2]);
+		const r = byKey.get(`${link[1]}/${link[2]}`);
 		const kept = r && noteFor.get(r);
 		if (kept) report.duplicateNotes.push({ note: n.path, keptNote: kept.note.path, citekey: r.citekey ?? r.label });
 		else if (source.library) report.missingFromExport.push(n.path);
@@ -417,7 +452,7 @@ export function planRecords(records: ImportRecord[], notes: VaultNote[], o: Impo
 			tagProperties: tagProps,
 			attachments,
 			added: r.added,
-			zotero: r.zoteroKey ? `zotero://select/library/items/${r.zoteroKey}` : undefined,
+			zotero: r.zoteroKey ? `zotero://select/${r.zoteroLibrary ?? "library"}/items/${r.zoteroKey}` : undefined,
 			notes: r.notes.filter((t) => t.trim()),
 		};
 	};
@@ -465,7 +500,7 @@ export function planRecords(records: ImportRecord[], notes: VaultNote[], o: Impo
 			disambiguate(generateCitekey({ title: data.title, authors: data.familyNames, year: data.year }, o.citekeyPattern || DEFAULT_PATTERN) || "ref", (k) =>
 				existingNames.has(lower(k)) || existingKeys.has(lower(k))
 			);
-		const sameTitle = data.title ? (byTitle.get(titleKey(data.title)) ?? [])[0] : undefined;
+		const sameTitle = data.title ? (byTitle.get(titleKey(data.title)) ?? []).find((n) => sameWork(data, n) !== false) : undefined;
 		if (sameTitle) {
 			report.zoteroDuplicates.push({ citekey, title: data.title, note: sameTitle.path });
 			continue;

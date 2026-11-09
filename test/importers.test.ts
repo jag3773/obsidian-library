@@ -503,3 +503,71 @@ test("attachment paths never escape the vault", async () => {
 	assert.deepEqual(plan.creates[0].extras.attachments, ["outside.pdf"]);
 	assert.ok(app.vault.getAbstractFileByPath("outside.pdf"));
 });
+
+// Review fixes (PR #42) -----------------------------------------------------------------------
+
+test("CSL-JSON: title-short and container-title-short are reported as not imported", () => {
+	const [r] = parseCslJson(
+		JSON.stringify([{ id: "x2020", type: "article-journal", title: "A Long Title", "title-short": "Long", "container-title": "Journal of Things", "container-title-short": "J. Things" }])
+	).records;
+	assert.deepEqual(r.unmapped, ["title-short", "container-title-short"]);
+});
+
+test("a Zotero group URI keeps its library: it never matches a personal note with the same key", async () => {
+	const csl = JSON.stringify([{ id: "http://zotero.org/groups/123/items/ABCD2345", type: "book", title: "Group Book" }]);
+	const { importer } = vault({
+		"g.json": csl,
+		"References/Personal.md": "---\ntitle: Personal Book\nzotero: zotero://select/library/items/ABCD2345\n---\n# Personal Book\n",
+	});
+	const [r] = parseCslJson(csl).records;
+	assert.equal(r.zoteroKey, "ABCD2345");
+	assert.equal(r.zoteroLibrary, "groups/123");
+	const { plan } = await importer.plan({ ...DEFAULT_IMPORT_CHOICES, exportPath: "g.json" });
+	assert.equal(plan.updates.length, 0, "the personal item ABCD2345 is another item");
+	assert.equal(plan.creates.length, 1);
+	assert.equal(plan.creates[0].extras.zotero, "zotero://select/groups/123/items/ABCD2345", "the link points at the group library");
+
+	// A note linked to that group item is matched by its link.
+	const { importer: again } = vault({ "g.json": csl, "References/Grouped.md": "---\nzotero: zotero://select/groups/123/items/ABCD2345\n---\n# Something else\n" });
+	const second = (await again.plan({ ...DEFAULT_IMPORT_CHOICES, exportPath: "g.json" })).plan;
+	assert.equal(second.updates[0]?.note.path, "References/Grouped.md");
+	assert.equal(second.updates[0].matchedBy, "Zotero link");
+});
+
+const SAME_TITLES = ["TY  - CHAP\nAU  - Doe, Jane\nTI  - Introduction\nPY  - 2020\nER  - ", "TY  - CHAP\nAU  - Roe, Rick\nTI  - Introduction\nPY  - 2021\nER  - "].join("\n");
+
+test("records without a key and with a repeated title update their own notes on a repeat import", async () => {
+	const { app, importer } = vault({ "c.ris": SAME_TITLES });
+	const choices: ImportChoices = { ...DEFAULT_IMPORT_CHOICES, exportPath: "c.ris" };
+	const first = (await importer.plan(choices)).plan;
+	assert.deepEqual(first.creates.map((c) => c.path), ["References/doeIntroduction2020.md", "References/roeIntroduction2021.md"]);
+	await importer.apply(first, choices);
+	await flush();
+	const again = (await importer.plan(choices)).plan;
+	assert.deepEqual(again.report.zoteroDuplicates, []);
+	assert.equal(again.creates.length, 0);
+	assert.deepEqual(
+		again.updates.map((u) => [u.note.path, u.record.data.authors[0]]),
+		[
+			["References/doeIntroduction2020.md", "Jane Doe"],
+			["References/roeIntroduction2021.md", "Rick Roe"],
+		]
+	);
+	assert.equal(app.vault.getMarkdownFiles().filter((f) => f.path.startsWith("References/")).length, 2);
+});
+
+test("an interrupted import of records with a repeated title finishes on a re-run", async () => {
+	const { app, importer } = vault({ "c.ris": SAME_TITLES });
+	const choices: ImportChoices = { ...DEFAULT_IMPORT_CHOICES, exportPath: "c.ris" };
+	let done = 0;
+	const backup = await importer.apply((await importer.plan(choices)).plan, choices, (d) => (done = d), () => done >= 1);
+	await flush();
+	assert.deepEqual(backup.created, ["References/doeIntroduction2020.md"]);
+	const rerun = (await importer.plan(choices)).plan;
+	assert.deepEqual(rerun.report.zoteroDuplicates, [], "Roe's chapter isn't a duplicate of Doe's");
+	assert.deepEqual(rerun.updates.map((u) => u.note.path), ["References/doeIntroduction2020.md"]);
+	assert.deepEqual(rerun.creates.map((c) => c.path), ["References/roeIntroduction2021.md"]);
+	await importer.apply(rerun, choices);
+	await flush();
+	assert.equal(fm(app, "References/roeIntroduction2021.md").year, 2021);
+});
