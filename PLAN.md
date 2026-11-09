@@ -2,7 +2,7 @@
 
 A reference manager that lives entirely in an Obsidian vault. One Markdown note per source, metadata in properties, PDFs next to them, and Obsidian Bases as the library UI. MIT licensed.
 
-Status: stage 1 implemented in `src/`. Stages 2 and 3 are specified here and not yet built.
+Status: stages 1 and 2 implemented in `src/`. Stage 3 is specified here and not yet built. User documentation for stage 2: [docs/annotations.md](docs/annotations.md).
 
 ## 1. Goals
 
@@ -83,10 +83,11 @@ All paths are vault-relative unless marked absolute. "Example (ekfocus)" shows t
 | Tablet folder (absolute, desktop only) | empty (feature off) | the MoonReader+ Dropbox folder | Folder your reading app syncs with |
 | Send to tablet on status | `reading` | `reading` | Copy the PDF to the tablet folder when status changes to this |
 | Status when highlights return | `reviewing` | `reviewing` | Set when a modified PDF comes back |
-| Status after extraction | `processed` | `processed` | Set after annotations are written to the note |
-| Annotations heading | `## Annotations` | `## Annotations` | Section the plugin owns, delimited by HTML comment markers |
-| Highlight color map | yellow → quote, red → danger, green → abstract, blue → tip | same colors as the author's Zotero Integration template | Color → callout type, with a label |
-| Pre-extraction command (desktop only) | empty | `python3 resources/scripts/expand_highlights.py {in} {out}` | Optional external step run on returned PDFs |
+| Bring back PDFs Stacks didn't send | off | on | Also import same-named, newer PDFs found in the tablet folder |
+| Status after extraction | empty (unchanged) | `processed` | Set after annotations are written, only moving forward in the status list. Off by default so the round trip's `reviewing` step isn't skipped |
+| Annotations heading | `## Annotations` | `## Annotations` | Heading the generated block goes under; the plugin owns only what is between its HTML comment markers |
+| Highlight color map | yellow → quote, red → important, green → tip ("Follow up"), blue → example ("Image"), default → quote, note → note | same colors as the author's Zotero Integration template | Color → callout type, with a label |
+| Pre-extraction command (desktop only) | empty | `python3 resources/scripts/expand_highlights.py {in} {out}` | Optional external step run on returned PDFs and by the extract command, from the vault folder |
 | Extract on PDF save | off | on | Re-extract when the PDF in the attachments folder changes (e.g. edited in PDF++) |
 
 ### 4.3 Citations and maintenance (stage 3)
@@ -145,13 +146,14 @@ Metadata sources (no API keys):
 
 All requests go through Obsidian's `requestUrl`, which works on mobile and avoids CORS.
 
-### Stage 2: reading round trip
+### Stage 2: reading round trip (implemented)
 
-- Status change to the "send" status copies the PDF to the tablet folder (desktop).
-- A watcher on the tablet folder (desktop, while Obsidian runs, plus a scan on startup) matches returned PDFs by filename, runs the optional pre-extraction command, copies the file back over the attachment, sets the "returned" status, then extracts.
-- Annotation extraction uses PDF.js: highlight, underline and note annotations, their colors, comments and page numbers. Highlighted text comes from the annotation's quadrilaterals intersected with the page's text content. Output follows the color map into callouts with page links (`[[file.pdf#page=N]]`), between `<!-- library:annotations:start -->` and `<!-- library:annotations:end -->` markers. Sets `highlights` and `last_highlighted`.
-- Command: **Extract annotations for current note**.
-- Command: **Send to tablet** for a manual push.
+- Status change to the "send" status copies the PDF to the tablet folder (desktop). The send records a SHA-256 of the copy, and never overwrites a tablet copy with changes that haven't been brought back.
+- A watcher on the tablet folder (desktop, while Obsidian runs, plus a scan on startup) matches returned PDFs by filename, waits until the file stops changing, and compares fingerprints: tablet changed only → returned; both changed → a dialog previews both copies (dates, sizes, annotation counts) and keeps both whichever is chosen. A returned PDF runs the optional pre-extraction command, is copied back over the attachment, sets the "returned" status, then is extracted. Records follow vault renames; a rename made while Obsidian was closed is found through the note's `pdf` link or by content hash.
+- Annotation extraction uses PDF.js: highlight, underline, strikeout, squiggly, sticky-note, text-box and rectangle annotations, their colors, comments, replies, page numbers and page labels. Highlighted text comes from the annotation's quadrilaterals intersected with the page's text content, rounded to whole words, with end-of-line hyphenation undone. Pages without text keep their highlights as page embeds. Output follows the color map into callouts with page links (`[[file.pdf#page=N]]`), grouped under page headings, each with a stable block ID derived from page and position, between `<!-- stacks:annotations:start -->` and `<!-- stacks:annotations:end -->` markers. Sets `highlights` and `last_highlighted`; writes nothing when nothing changed.
+- Command: **Extract annotations for current note** (from the note or its PDF).
+- Command: **Send PDF to tablet folder** for a manual push.
+- Command: **Check tablet folder for returned PDFs**.
 
 ### Stage 3: citations and maintenance
 
@@ -175,8 +177,12 @@ src/
     lookup.ts          routes an identifier to sources with fallbacks
   library.ts           vault operations: find by identifier, create, enrich, rename, file attachments
   inbox.ts             inbox handlers for .md and .pdf
-  pdf.ts               PDF.js text and metadata reading
-  ui/AddReferenceModal.ts
+  pdf.ts               PDF.js text, metadata and annotation reading
+  annotations.ts       annotations to Markdown: text under highlights, colors, rendering, marker block (pure)
+  extract.ts           writes annotations into a reference note
+  roundtrip.ts         tablet send / watch / return / conflict, over a Host interface
+  desktop.ts           the Host from Node's fs and child_process (desktop only, loaded lazily)
+  ui/AddReferenceModal.ts, ui/ConflictModal.ts
 test/                  node:test suites for the pure modules
 ```
 
@@ -203,4 +209,4 @@ The plugin sends identifiers (ISBN, DOI, arXiv ID, URL) to the public services i
 
 1. Final plugin name and id.
 2. Should the inbox handler leave a processed copy in a "processed" folder, or only move files? Current behaviour: move.
-3. Stage 2 matching for returned PDFs: by filename only, or also by a hash recorded when the file was sent? Filename-only is simpler and matches the current MoonReader+ flow.
+3. ~~Stage 2 matching for returned PDFs: by filename only, or also by a hash recorded when the file was sent?~~ Both: matched by filename, with a hash recorded at send time to detect real changes and divergence.

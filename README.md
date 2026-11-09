@@ -10,7 +10,7 @@ If Obsidian is where you think, it should be enough to manage the sources behind
 
 [Get started](#install-beta) · [Available today](#available-today) · [The road ahead](#the-road-ahead)
 
-> **Early beta · 0.2.x.** Capture, metadata lookup, citekeys, PDF filing, and library views are available now. Stacks is still growing toward a complete reference manager. Zotero migration, annotation extraction, and citation export are future work.
+> **Early beta · 0.2.x.** Capture, metadata lookup, citekeys, PDF filing, library views, annotation extraction, and a tablet reading round trip are available now. Stacks is still growing toward a complete reference manager. Zotero migration and citation export are future work.
 
 ## Let your reading become part of your thinking
 
@@ -28,12 +28,14 @@ Zotero has helped researchers collect, organize, and cite their work for years. 
 - **Start with the details that matter.** References come with a title, authors, publication date (`published`), year, abstract, and, where the source has them, publisher, ISBN, or DOI. Book pages on Amazon, Goodreads, and Kobo, GitHub repositories, and news and blog articles are read the way Zotero's translators read them.
 - **Give sources useful citekeys.** Use a configurable Better BibTeX-style formula, with collision handling. The default is `auth.lower + shorttitle(3, 3) + year`. Citekey generation is available today; inserting and formatting citations is still ahead.
 - **Browse with Obsidian Bases.** Choose your library's `.base` file, or create a starter Base. Match fields to your vault's property names and browse your collection with tables, filters, and reading-status views.
+- **Turn highlights into notes.** Run **Extract annotations** on a reference and its PDF's highlights, underlines, and comments appear in the note as callouts grouped by page, each linked to its page. Colors map to callout types you choose. Re-extracting updates only Stacks' marked block, so your own writing in the note is never touched. See [Highlights, comments and the reading round trip](docs/annotations.md).
+- **Read on a tablet and bring your highlights home (desktop).** Point Stacks at a folder your reading app syncs. Setting a note to `reading` sends the PDF there; when it comes back changed, Stacks files it, sets the status to `reviewing`, and extracts the annotations. If the PDF also changed in the vault, you choose which copy to keep, and the other is saved beside it.
 - **Make it fit your vault.** Configure folders, filenames, property mappings, note templates, statuses, and author links. Folder and template settings suggest matching vault paths as you type.
 
 ### From a saved paper to a connected note
 
 1. Run **Stacks: Add reference** and paste a DOI, or drop a PDF into your inbox.
-2. Open the reference note, read the PDF in Obsidian, and add your own thoughts and links.
+2. Open the reference note, read the PDF in Obsidian (or on your tablet), and run **Extract annotations** to bring your highlights into the note. Add your own thoughts and links around them.
 3. Browse your library in a Base, follow connections into your projects, and keep building on what you read.
 
 No separate library database to maintain. The notes and files in your vault are the library.
@@ -42,7 +44,7 @@ No separate library database to maintain. The notes and files in your vault are 
 
 The destination is the whole journey: **collect → read → understand → write → cite**.
 
-The next pieces include bringing an existing Zotero library across, turning highlights into linked notes, keeping complete citation metadata, and citing sources in finished work. Search, duplicate merging, attachment maintenance, and dependable work across devices matter just as much as the first capture.
+The next pieces include bringing an existing Zotero library across, keeping complete citation metadata, and citing sources in finished work. Search, duplicate merging, attachment maintenance, and dependable work across devices matter just as much as the first capture.
 
 | The next step | Proposals to explore |
 | --- | --- |
@@ -126,7 +128,7 @@ For a web page, Stacks trusts the most specific source first:
 
 A page that names a DOI is looked up through Crossref. A book page that names an ISBN gets a missing date, publisher, or description from Open Library and Google Books; the page's own values win. A bot check served in place of the page (Kobo, Cloudflare, an Amazon captcha) is recognized and ignored.
 
-Note bodies and PDF text are processed locally. Lookups send the identifier or URL to the relevant service or website; identifiers discovered in a PDF may also be looked up. An optional Crossref contact email is sent only when you configure it. Stacks has no telemetry or required cloud account.
+Note bodies, PDF text, and annotations are processed locally. The optional pre-extraction command runs on your computer, and the tablet round trip only copies files between your vault and a folder you choose. Lookups send the identifier or URL to the relevant service or website; identifiers discovered in a PDF may also be looked up. An optional Crossref contact email is sent only when you configure it. Stacks has no telemetry or required cloud account.
 
 ## Build and contribute
 

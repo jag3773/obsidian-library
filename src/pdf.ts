@@ -1,4 +1,5 @@
 import { App, TFile, loadPdfJs } from "obsidian";
+import { ExtractResult, collectAnnotations } from "./annotations";
 
 export interface PdfInfo {
 	text: string;
@@ -24,6 +25,43 @@ export async function readPdf(app: App, file: TFile, pages = 3): Promise<PdfInfo
 		const meta = await doc.getMetadata().catch(() => null);
 		const info = (meta?.info ?? {}) as { Title?: string; Author?: string };
 		return { text: parts.join("\n"), title: info.Title?.trim() || undefined, author: info.Author?.trim() || undefined };
+	} finally {
+		await doc.destroy();
+	}
+}
+
+/** A PDF the extractor can't read, with a reason fit to show the user. */
+export class PdfReadError extends Error {
+	constructor(
+		message: string,
+		public reason: "encrypted" | "unreadable"
+	) {
+		super(message);
+		this.name = "PdfReadError";
+	}
+}
+
+/** Open PDF bytes with PDF.js; turns PDF.js's exceptions into PdfReadError. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function openPdf(pdfjs: any, data: ArrayBuffer | Uint8Array, name: string): Promise<any> {
+	try {
+		// Copy: PDF.js transfers the buffer to its worker.
+		const bytes = data instanceof Uint8Array ? data.slice() : new Uint8Array(data.slice(0));
+		return await pdfjs.getDocument({ data: bytes, isEvalSupported: false, enableScripting: false, verbosity: 0 }).promise;
+	} catch (e) {
+		const n = (e as { name?: string })?.name;
+		if (n === "PasswordException") throw new PdfReadError(`${name} is password-protected; remove the password to extract annotations.`, "encrypted");
+		throw new PdfReadError(`${name} couldn't be read as a PDF (${e instanceof Error ? e.message : String(e)}).`, "unreadable");
+	}
+}
+
+/** Read the annotations of a PDF with Obsidian's bundled PDF.js. */
+export async function readAnnotations(data: ArrayBuffer | Uint8Array, name: string): Promise<ExtractResult> {
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const pdfjs: any = await loadPdfJs();
+	const doc = await openPdf(pdfjs, data, name);
+	try {
+		return await collectAnnotations(doc, pdfjs.OPS);
 	} finally {
 		await doc.destroy();
 	}
