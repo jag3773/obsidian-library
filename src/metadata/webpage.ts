@@ -60,12 +60,12 @@ function metaLayer(doc: Document): Found {
 		type: one("citation_journal_title") ? "article" : undefined,
 		title: one("citation_title", "dc.title", "dcterms.title", "og:title", "twitter:title") ?? stripSite(docTitle, site),
 		// Highwire and Dublin Core use "Last, First"; turn it into display order.
-		authors: highwire.map((a) => (/^[^,]+,[^,]+$/.test(a) ? a.split(",").map((x) => x.trim()).reverse().join(" ") : a)),
+		authors: (highwire.length ? highwire : bylines(doc)).map((a) => (/^[^,]+,[^,]+$/.test(a) ? a.split(",").map((x) => x.trim()).reverse().join(" ") : a)),
 		date: parseDate(
 			one(
 				"citation_publication_date", "citation_date", "citation_online_date", "dc.date", "dcterms.issued", "dcterms.date", "dc.date.issued",
 				"prism.publicationdate", "article:published_time", "book:release_date", "date", "datepublished", "pubdate", "uploaddate"
-			)
+			) ?? timeElement(doc)
 		),
 		journal: one("citation_journal_title", "citation_conference_title", "prism.publicationname", "og:site_name", "application-name"),
 		publisher: one("citation_publisher", "dc.publisher", "dcterms.publisher"),
@@ -74,6 +74,42 @@ function metaLayer(doc: Document): Found {
 		url: httpUrl(one("og:url")),
 		abstract: one("citation_abstract", "dc.description", "dcterms.abstract", "description", "og:description", "twitter:description"),
 	};
+}
+
+/** Looks like a person's name: capitalized, a few words, no sentence punctuation. */
+const PERSON = /^\p{Lu}[\p{L}.'’-]*(?: [\p{L}.'’-]+){0,4}$/u;
+
+/**
+ * Authors marked up in the page body, when no tag names them. In order: microdata
+ * (itemprop="author", as on YouTube), links with rel="author", links to an author page,
+ * then links inside a byline. The guesses (the last two) are searched inside <article> when
+ * the page has one, so related-post links elsewhere aren't taken.
+ */
+function bylines(doc: Document): string[] {
+	const article: ParentNode = doc.querySelector("article") ?? doc;
+	const texts = (selector: string, root: ParentNode = doc) => Array.from(root.querySelectorAll(selector)).map((el) => tidy(el.textContent ?? undefined));
+	const micro = Array.from(doc.querySelectorAll('[itemprop~="author"]')).map((el) => {
+		const name = el.matches('[itemprop~="name"]') ? el : el.querySelector('[itemprop~="name"]') ?? el;
+		return tidy(name.getAttribute("content") ?? name.textContent ?? undefined);
+	});
+	const tries: [(string | undefined)[], boolean][] = [
+		[micro, false],
+		[texts('a[rel~="author"]'), false],
+		// Guesses from link targets and class names must look like names.
+		[texts('a[href*="/author/"], a[href*="/authors/"]', article), true],
+		[texts('[class*="byline"] a[href]', article), true],
+	];
+	for (const [found, strict] of tries) {
+		const names = found.filter((n): n is string => !!n && n.length <= 80 && !/^https?:\/\//.test(n) && (!strict || PERSON.test(n)));
+		if (names.length) return [...new Set(names)].slice(0, 10);
+	}
+	return [];
+}
+
+/** The first machine-readable date in the article, a last resort for the publication date. */
+function timeElement(doc: Document): string | undefined {
+	const el = (doc.querySelector("article") ?? doc).querySelector("time[datetime]");
+	return el?.getAttribute("datetime") ?? undefined;
 }
 
 /** "Article | Site" -> "Article" when Site is the page's site name. */

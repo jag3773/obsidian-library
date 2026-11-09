@@ -30,6 +30,7 @@ For other URLs it reads the page itself, the way Zotero's translators do, trusti
 1. **Site readers** for Amazon, Goodreads and Kobo book pages and GitHub repositories, which keep their best data outside the standard tags.
 2. **schema.org JSON-LD**, including a book's edition (`workExample`).
 3. **Standard tags:** Highwire `citation_*` (used by Google Scholar), Dublin Core, PRISM and Open Graph.
+4. **The page body,** as a last resort: bylines (microdata, `rel="author"`, author-page links) and the article's `<time>`.
 
 A page that names a DOI is looked up through Crossref. A book page that names an ISBN gets missing dates, publishers and descriptions from Open Library and Google Books; the page's own values win. A bot check served in place of the page (Kobo, Cloudflare, an Amazon captcha) is recognized and ignored, so its title never becomes the reference's.
 

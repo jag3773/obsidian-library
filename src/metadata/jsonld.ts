@@ -57,15 +57,41 @@ const RANK: [RegExp, string][] = [
 	[/^(Thesis)$/, "thesis"],
 	[/^(Chapter)$/, "chapter"],
 	[/^(CreativeWork|Dataset|PodcastEpisode)$/, "webpage"],
+	// Some sites describe an article only as a page, with its date.
+	[/^(WebPage|ItemPage|AboutPage)$/, "webpage"],
 ];
 
-/** The page's main work: the most specific creative work type found. */
+/**
+ * How much an item's authors can be trusted: people written out in place beat references
+ * (Yoast and similar plugins point at the account that posted, often "admin").
+ */
+function authorScore(o: Obj): number {
+	const authors = list(o.author ?? o.creator);
+	if (!authors.length) return 0;
+	return authors.some((a) => typeof a === "string" || (isObj(a) && a["@type"] && str(a.name))) ? 2 : 1;
+}
+
+/**
+ * The page's main work: the most specific creative work type found. When several items
+ * have that type (a site's SEO plugin and its own block), the one naming its authors wins.
+ */
 function primary(objs: Obj[]): { item: Obj; type: string } | undefined {
 	for (const [re, type] of RANK) {
-		const item = objs.find((o) => types(o).some((t) => re.test(t)));
-		if (item) return { item, type };
+		const items = objs.filter((o) => types(o).some((t) => re.test(t)));
+		if (!items.length) continue;
+		const best = items.reduce((a, b) => (authorScore(b) > authorScore(a) ? b : a));
+		return { item: best, type };
 	}
 	return undefined;
+}
+
+/** item with author, creator and publisher references ({"@id": ...}) replaced by what they point to. */
+function resolve(item: Obj, objs: Obj[]): Obj {
+	const byId = new Map(objs.filter((o) => typeof o["@id"] === "string").map((o) => [o["@id"] as string, o]));
+	const deref = (v: unknown) => list(v).map((x) => (isObj(x) && !str(x.name) && typeof x["@id"] === "string" ? byId.get(x["@id"]) ?? x : x));
+	const out = { ...item };
+	for (const k of ["author", "creator", "publisher"]) if (out[k] !== undefined) out[k] = deref(out[k]);
+	return out;
 }
 
 function people(v: unknown): string[] {
@@ -117,8 +143,9 @@ function fromItem(o: Obj): Found {
  */
 export function readJsonLd(doc: Document): Found & { type?: string } {
 	const objs = jsonLdObjects(doc);
-	const main = primary(objs);
-	if (!main) return {};
+	const found0 = primary(objs);
+	if (!found0) return {};
+	const main = { ...found0, item: resolve(found0.item, objs) };
 	const found: Found = { type: main.type, ...fromItem(main.item) };
 	const extras = [
 		...list(main.item.workExample).filter(isObj),

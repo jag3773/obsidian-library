@@ -224,3 +224,51 @@ test("Goodreads' date comes from its page data when the visible line is missing"
 	assert.doesNotMatch(html, /publicationInfo/);
 	assert.equal(parseWebpage(html, "https://www.goodreads.com/book/show/54493401").date, "2021-05-04");
 });
+
+// Patterns seen on news sites in a real library (New Atlas, Christianity Today, Mission
+// Network News, YouTube, Cloudflare's blog, HBR, Christian Today).
+
+test("an author given as a reference to a Person elsewhere in the graph is resolved", () => {
+	const html = `<script type="application/ld+json">{"@graph":[
+		{"@type":"NewsArticle","headline":"Chip","datePublished":"2023-07-21","author":{"@id":"https://n.example/author/loz/#author"}},
+		{"@type":"Person","@id":"https://n.example/author/loz/#author","name":"Loz Blain"}]}</script>`;
+	assert.deepEqual(parseWebpage(html, "https://n.example/a").authors, ["Loz Blain"]);
+});
+
+test("a block naming its authors beats an SEO plugin's block pointing at the poster's account", () => {
+	const html = `<script type="application/ld+json">{"@graph":[
+		{"@type":"Article","headline":"Iranians Gain 12 New Ways","author":{"name":"CMS Admin","@id":"#/schema/person/1"},"datePublished":"2024-01-24"},
+		{"@type":"Person","@id":"#/schema/person/1","name":"CMS Admin"}]}</script>
+		<script type="application/ld+json">{"@type":"NewsArticle","headline":"Iranians Gain 12 New Ways","author":[{"@type":"Person","name":"Jayson Casper"}],"datePublished":"2024-01-24"}</script>`;
+	assert.deepEqual(parseWebpage(html, "https://ct.example/a").authors, ["Jayson Casper"]);
+});
+
+test("a page described only as a WebPage still gives its date, and rel=author gives the byline", () => {
+	const html = `<script type="application/ld+json">{"@graph":[{"@type":"WebPage","name":"Occult king meets the King of Kings","datePublished":"2023-05-25T04:00:27+00:00"},{"@type":"WebSite","name":"MNN"}]}</script>
+		<div class="meta"><span class="meta-author vcard author"><a href="/author/katey" rel="author">Katey Hearth</a></span></div><article><p>Text</p></article>`;
+	const r = parseWebpage(html, "https://mnn.example/a");
+	assert.equal(r.date, "2023-05-25");
+	assert.deepEqual(r.authors, ["Katey Hearth"]);
+});
+
+test("YouTube's channel comes from microdata", () => {
+	const html = `<meta itemprop="datePublished" content="2013-02-25"><span itemprop="author" itemscope itemtype="http://schema.org/Person"><link itemprop="url" href="http://www.youtube.com/@TED"><link itemprop="name" content="TED"></span>`;
+	const r = parseWebpage(html, "https://www.youtube.com/watch?v=x");
+	assert.deepEqual(r.authors, ["TED"]);
+	assert.equal(r.date, "2013-02-25");
+	assert.equal(r.type, "video");
+});
+
+test("author-page links and byline links are read inside the article, and only if they look like names", () => {
+	const cloudflare = `<article><a href="/author/joao-tome/">João Tomé</a></article><aside><a href="/author/someone-else/">Someone Else</a></aside>`;
+	assert.deepEqual(parseWebpage(cloudflare, "https://blog.example/p").authors, ["João Tomé"]);
+	const hbr = `<p class="byline"><span class="x_byline">by <a href="/search?term=John J. Morse">John J. Morse</a> and <a href="/search?term=Jay W. Lorsch">Jay W. Lorsch</a> <a href="/follow">follow this topic</a></span></p>`;
+	assert.deepEqual(parseWebpage(hbr, "https://hbr.example/p").authors, ["John J. Morse", "Jay W. Lorsch"]);
+});
+
+test("an article's <time datetime> is the date of last resort", () => {
+	const html = `<meta name="author" content="Eric Steggerda"><article><time datetime="2023-05-29T05:40">29 May, 2023 05:40 BST</time></article><footer><time datetime="2020-01-01">old</time></footer>`;
+	assert.equal(parseWebpage(html, "https://ctoday.example/a").date, "2023-05-29");
+	const tagged = `<meta property="article:published_time" content="2021-01-02">` + html;
+	assert.equal(parseWebpage(tagged, "https://ctoday.example/a").date, "2021-01-02", "tags win");
+});
