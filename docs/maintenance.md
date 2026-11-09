@@ -6,7 +6,7 @@ A library grows by many small captures, imports and renames. Stacks can check it
 
 Run **Stacks: Check library health**. Stacks reads every note in your references folder and writes a report note, `Stacks health check`, beside the references folder (at the vault root when the references folder is `References`). Each problem links to the note or file it is about, so you can click through and fix it.
 
-The report is rewritten each time the check runs, so don't keep your own notes in it. Apart from that one note, the check changes nothing.
+The report is rewritten each time the check runs, so don't keep your own notes in it. Stacks recognizes its report by the property `stacks: health-check`; if a note of yours already has the report's name, it is left alone and the report is written as `Stacks health check 1` (or the next free number). Apart from that one note, the check changes nothing.
 
 | Check | What it finds |
 |---|---|

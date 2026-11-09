@@ -20,6 +20,8 @@ type Frontmatter = Record<string, unknown>;
 
 /** The health report note's name; it sits beside the references folder. */
 export const REPORT_NAME = "Stacks health check";
+/** The property that marks a note as the health check's own report, safe to rewrite. */
+export const REPORT_MARKER = { key: "stacks", value: "health-check" } as const;
 
 /** What merging one duplicate into another will do, for the preview. */
 export interface MergePlan {
@@ -139,24 +141,43 @@ export class Maintenance {
 		);
 	}
 
-	/** Where the report note goes: beside the references folder. */
-	reportPath(): string {
+	/** Where the report note goes: beside the references folder ("… 1", "… 2" when taken). */
+	reportPath(n = 0): string {
 		const folder = normalizePath(this.settings().referencesFolder);
 		const parent = folder.includes("/") ? folder.slice(0, folder.lastIndexOf("/")) : "";
-		return normalizePath(`${parent}/${REPORT_NAME}.md`);
+		return normalizePath(`${parent}/${REPORT_NAME}${n ? ` ${n}` : ""}.md`);
 	}
 
-	/** Write (or rewrite) the report note. The only file the health check writes. */
+	/** Whether a note is a report the health check wrote: its frontmatter has REPORT_MARKER. */
+	private async isOwnReport(file: TFile): Promise<boolean> {
+		const info = getFrontMatterInfo(await this.app.vault.read(file));
+		if (!info.exists) return false;
+		try {
+			const fm: unknown = parseYaml(info.frontmatter);
+			return !!fm && typeof fm === "object" && (fm as Frontmatter)[REPORT_MARKER.key] === REPORT_MARKER.value;
+		} catch {
+			return false;
+		}
+	}
+
+	/**
+	 * Write (or rewrite) the report note. The only file the health check writes. A note at the
+	 * report path that the check didn't write is left alone; the report goes to a free name.
+	 */
 	async writeReport(report: HealthReport, commands: ReportContext["commands"]): Promise<TFile> {
 		const s = this.settings();
-		const md = healthReportMarkdown(report, { date: localDate(new Date(), true), staleDays: s.healthStaleDays, commands, properties: s.propertyNames });
-		const path = this.reportPath();
-		const existing = this.app.vault.getAbstractFileByPath(path);
-		if (existing instanceof TFile) {
-			await this.app.vault.process(existing, () => md);
-			return existing;
+		const md =
+			`---\n${REPORT_MARKER.key}: ${REPORT_MARKER.value}\n---\n` +
+			healthReportMarkdown(report, { date: localDate(new Date(), true), staleDays: s.healthStaleDays, commands, properties: s.propertyNames });
+		for (let n = 0; ; n++) {
+			const path = this.reportPath(n);
+			const existing = this.app.vault.getAbstractFileByPath(path);
+			if (!existing) return this.app.vault.create(path, md);
+			if (existing instanceof TFile && (await this.isOwnReport(existing))) {
+				await this.app.vault.process(existing, () => md);
+				return existing;
+			}
 		}
-		return this.app.vault.create(path, md);
 	}
 
 	/**

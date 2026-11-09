@@ -45,6 +45,19 @@ test("the health check reads only, then writes just its report beside the refere
 	assert.equal((await maintenance.writeReport(r, commands)).path, report.path);
 });
 
+test("the health check doesn't overwrite a note of the person's at the report path", async () => {
+	const { app, maintenance } = setup();
+	const mine = app.vault.addFile("Stacks health check.md", "My own notes about the library.\n");
+	const r = await maintenance.check();
+	const report = await maintenance.writeReport(r, commands);
+	assert.equal(report.path, "Stacks health check 1.md");
+	assert.equal(await app.vault.read(mine), "My own notes about the library.\n");
+	assert.match(await app.vault.read(report), /^---\nstacks: health-check\n---\n# Library health check/);
+	// The next run rewrites its own report there, not the person's note.
+	assert.equal((await maintenance.writeReport(r, commands)).path, report.path);
+	assert.equal(await app.vault.read(mine), "My own notes about the library.\n");
+});
+
 test("relinking points pdf at the PDF named after the citekey and fixes the attachments entry", async () => {
 	const { app, maintenance } = setup();
 	const note = app.vault.addFile("References/smith2020.md", md({ citekey: "smith2020", pdf: "[[old.pdf]]", attachments: ["[[old.pdf]]", "[[notes.txt]]"] }));
