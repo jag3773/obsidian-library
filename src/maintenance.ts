@@ -1,4 +1,4 @@
-import { App, TFile, normalizePath, parseYaml } from "obsidian";
+import { App, TFile, getFrontMatterInfo, normalizePath, parseYaml } from "obsidian";
 import {
 	DupNote,
 	DuplicateGroup,
@@ -30,6 +30,8 @@ export interface MergePlan {
 	paragraphsAdded: number;
 	/** Notes with links to `drop`, and how many each has. */
 	links: { file: TFile; count: number }[];
+	/** `drop`'s text when the preview was made; the merge stops if it changed since. */
+	dropText: string;
 }
 
 export interface MergeResult {
@@ -44,6 +46,9 @@ const listOf = (v: unknown): unknown[] => (Array.isArray(v) ? v : v === undefine
  * reads; each repair is a separate call made after the person has seen a preview.
  */
 export class Maintenance {
+	/** What merging last wrote to each note while repointing links, to tell those edits from the person's. */
+	private written = new WeakMap<TFile, string>();
+
 	constructor(
 		private app: App,
 		private library: Library,
@@ -211,25 +216,33 @@ export class Maintenance {
 	/** What merging `drop` into `keep` would change. Reads only. */
 	async planMerge(keep: TFile, drop: TFile): Promise<MergePlan> {
 		const { changes } = mergeFrontmatter(this.library.frontmatter(keep), this.library.frontmatter(drop), this.mergeOptions());
-		const body = mergeBody(splitNote(await this.app.vault.read(keep)).body, splitNote(await this.app.vault.read(drop)).body, {
+		const dropText = await this.app.vault.read(drop);
+		const body = mergeBody(splitNote(await this.app.vault.read(keep)).body, splitNote(dropText).body, {
 			dropName: drop.basename,
 			annotationsHeading: this.settings().annotationsHeading,
 		});
-		return { keep, drop, changes, annotationsCopied: body.annotationsCopied, paragraphsAdded: body.paragraphsAdded, links: await this.linksTo(drop, [keep]) };
+		return { keep, drop, changes, annotationsCopied: body.annotationsCopied, paragraphsAdded: body.paragraphsAdded, links: await this.linksTo(drop, [keep]), dropText };
 	}
 
 	/**
 	 * Merge `drop` into `keep`: fill and combine properties, copy what only `drop`'s body has,
 	 * point every link to `drop` at `keep`, then move `drop` to the trash. Works from the notes
-	 * as they are now, so edits made since the preview are respected.
+	 * as they are now, so edits to `keep` since the preview are respected. If `drop` changed
+	 * since the preview, nothing is merged: it would go to the trash with edits nobody saw.
 	 */
 	async merge(plan: MergePlan): Promise<MergeResult> {
 		const { keep, drop } = plan;
 		return this.library.exclusive(async () => {
 			if (!this.library.exists(keep) || !this.library.exists(drop)) throw new Error(`${keep.basename} or ${drop.basename} was moved or deleted. Nothing was merged.`);
 			const options = this.mergeOptions();
-			const dropFm = { ...this.library.frontmatter(drop) };
-			const dropBody = splitNote(await this.app.vault.read(drop)).body;
+			// Properties and body from the same fresh text: the metadata cache can lag a save.
+			const dropText = await this.app.vault.read(drop);
+			if (dropText !== plan.dropText && dropText !== this.written.get(drop))
+				throw new Error(`${drop.basename} changed since the preview. Nothing was merged; review the merge again.`);
+			const info = getFrontMatterInfo(dropText);
+			const parsed: unknown = info.exists ? parseYaml(info.frontmatter) : null;
+			const dropFm: Frontmatter = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? { ...(parsed as Frontmatter) } : {};
+			const dropBody = splitNote(dropText).body;
 			await this.app.fileManager.processFrontMatter(keep, (fm: Frontmatter) => {
 				Object.assign(fm, mergeFrontmatter(fm, dropFm, options).updates);
 			});
@@ -246,6 +259,7 @@ export class Maintenance {
 				await this.app.vault.process(file, (text) => {
 					const r = rewriteLinks(text, (l) => this.pointsTo(l, file, drop), linktext);
 					count = r.count;
+					if (r.count) this.written.set(file, r.text);
 					return r.text;
 				});
 				linksChanged += count;
