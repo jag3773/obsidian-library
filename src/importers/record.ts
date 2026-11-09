@@ -12,6 +12,8 @@ export interface ImportRecord {
 	citekey?: string;
 	/** A Zotero item key: matches zotero://select links in notes. */
 	zoteroKey?: string;
+	/** The Zotero library the key belongs to, as zotero://select links write it ("groups/123"). Unset: the personal library. */
+	zoteroLibrary?: string;
 	/** The record's type as the file writes it ("journalArticle", "article-journal", "inproceedings", "JOUR"). */
 	sourceType: string;
 	data: ReferenceData;

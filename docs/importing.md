@@ -16,11 +16,12 @@ Each record is matched to an existing note by, in order:
 
 1. the note's filename equals the record's citekey;
 2. the note's `citekey` property equals it;
-3. a `zotero://select` link to the record's Zotero item (CSL-JSON written by Zotero carries the item's address as its `id`);
+3. a `zotero://select` link to the record's Zotero item (CSL-JSON written by Zotero carries the item's address as its `id`). The library counts: an item from a group library (`http://zotero.org/groups/123/items/…`) only matches a link to that group (`zotero://select/groups/123/items/…`), never a personal item with the same key, and new notes link to the group;
 4. a DOI or ISBN that only that note and that record have;
-5. an exact title that only that note and that record have.
+5. for a record with no citekey or Zotero address, its title together with the key your citekey pattern makes for it (the note's filename or `citekey`, as the first import named it), or with its year and first author;
+6. an exact title that only that note and that record have.
 
-That is why importing the same file twice, or a newer export of it, updates the notes the first import made instead of adding copies. A record whose title matches a note it couldn't otherwise be matched to is listed as a possible duplicate and not created. Give the note the record's citekey, DOI or ISBN and import again to update it.
+That is why importing the same file twice, a newer export of it, or the rest of an import you stopped, updates the notes the first import made instead of adding copies. A record whose title matches a note it couldn't otherwise be matched to is listed as a possible duplicate and not created, unless the note's year or first author differs: then it is another work with the same title (two chapters called "Introduction"), and the record gets its own note. Give the note the record's citekey, DOI or ISBN and import again to update it.
 
 ### What gets written
 

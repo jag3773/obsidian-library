@@ -63,7 +63,7 @@ const OTHER_PEOPLE = ["illustrator", "narrator", "compiler", "contributor", "edi
 
 /** Fields read, and ones that are bookkeeping rather than metadata. */
 const MAPPED = new Set([
-	"id", "citation-key", "type", "title", "title-short", "issued", "accessed", "container-title", "container-title-short", "collection-title", "publisher",
+	"id", "citation-key", "type", "title", "issued", "accessed", "container-title", "collection-title", "publisher",
 	"publisher-place", "volume", "issue", "page", "edition", "ISBN", "ISSN", "DOI", "URL", "language", "abstract", "keyword", "note",
 	"editor", "translator", "collection-editor", ...PRIMARY, ...OTHER_PEOPLE,
 ]);
@@ -113,13 +113,17 @@ export function cslDateToIso(v: unknown): string | undefined {
 	return parseDate(str(d.raw) ?? str(d.literal));
 }
 
-/** A Zotero item key in a CSL id written by Zotero ("http://zotero.org/users/1/items/ABCD2345"). */
-const ZOTERO_URI = /^https?:\/\/zotero\.org\/(?:users|groups)\/\w+\/items\/([A-Z0-9]{8})$/;
+/**
+ * A Zotero item in a CSL id written by Zotero: "http://zotero.org/users/1/items/ABCD2345" (a
+ * personal library) or ".../groups/123/items/ABCD2345" (a group library, whose keys are its own).
+ */
+const ZOTERO_URI = /^https?:\/\/zotero\.org\/(?:users\/\w+|groups\/(\d+))\/items\/([A-Z0-9]{8})$/;
 
 /** One CSL item as an import record. `index` (from 1) names records without an id. */
 export function cslItemToRecord(item: Record<string, unknown>, index: number, diagnostics: Diagnostic[]): ImportRecord {
 	const rawId = str(item["citation-key"]) ?? str(item.id);
-	const zoteroKey = rawId?.match(ZOTERO_URI)?.[1];
+	const zoteroUri = rawId?.match(ZOTERO_URI);
+	const zoteroKey = zoteroUri?.[2];
 	// A Zotero URI or a bare number is a database id, not a citekey.
 	const citekey = rawId && !zoteroKey && !/^\d+$/.test(rawId) && !/\s/.test(rawId) ? rawId : undefined;
 	const label = citekey ?? `record ${index}`;
@@ -198,6 +202,7 @@ export function cslItemToRecord(item: Record<string, unknown>, index: number, di
 		label,
 		citekey,
 		zoteroKey,
+		zoteroLibrary: zoteroUri?.[1] ? `groups/${zoteroUri[1]}` : undefined,
 		sourceType: cslType || "(none)",
 		data,
 		tags: keywords.map((tag) => ({ tag })),
