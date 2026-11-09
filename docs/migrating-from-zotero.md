@@ -159,7 +159,7 @@ Press **Preview**. Nothing is written yet: the preview counts how each note matc
 
 What the import does, following what a real migration needed:
 
-- **Matching.** Each note is matched to its item by filename = citekey, then by the note's `citekey` property, then by the item key in its `zotero://select/library/items/KEY` link, then by an exact title found only once. The report says how each matched.
+- **Matching.** Each note is matched to its item by filename = citekey, then by the note's `citekey` property, then by the item key in its `zotero://select/library/items/KEY` link, then by a DOI or ISBN found only once, then by an exact title found only once. The report says how each matched. Other bibliography files (CSL-JSON, BibTeX, RIS) use the same matching: see [importing bibliography files](importing.md).
 - **Bodies are never changed.** Only properties are added. Existing values are kept unless you turn on **Zotero's values win**, which applies to bibliographic fields only; your status, collections and tags are filled in, never replaced.
 - **Broken frontmatter** (generated aliases with unescaped quotes) is repaired: every line that still parses is kept and `aliases` is rebuilt from the note's heading.
 - **Items with no note** get one (title, abstract and any Zotero child notes), unless you turn that off. An item whose title matches an existing note is listed as a probable duplicate inside Zotero instead.
@@ -167,7 +167,7 @@ What the import does, following what a real migration needed:
 - **Attachments** are linked when the file is in the vault (found by filename). Zotero's web snapshots stay in Zotero's storage; anything else outside the vault is listed, so you can move it in and import again.
 - **Annotations** made in Zotero's PDF reader aren't in a Better BibTeX export. Highlights already in your notes are untouched; for the rest, use Zotero's **File → Export PDF…**, which writes the annotations into the PDF, keep that PDF in the vault, and run **Stacks: Extract annotations** on its note.
 
-The import writes a report note beside your references folder with every list, and a backup in the plugin's folder. **Stacks: Undo last Zotero import** restores every changed note exactly, renames notes back and moves created notes to the trash.
+The import writes a report note beside your references folder with every list, and a backup in the plugin's folder. **Stacks: Undo last import** restores every changed note exactly, renames notes back and moves created notes to the trash.
 
 **Protect your work anyway:** commit before and after the run if your vault is in git. The import's output is deterministic, so the whole run is one reviewable commit. Running it again changes nothing unless the export or your choices changed.
 
