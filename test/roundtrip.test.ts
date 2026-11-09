@@ -61,7 +61,7 @@ function vaultWithReference(app: App, status = "reading", body = "# Smith\n\nMy 
 }
 
 function tempFolder(): string {
-	return fs.mkdtempSync(path.join(os.tmpdir(), "library-tablet-test-"));
+	return fs.mkdtempSync(path.join(os.tmpdir(), "stacks-tablet-test-"));
 }
 
 function setup(overrides: Partial<LibrarySettings> = {}) {
@@ -201,7 +201,7 @@ test("sending refuses to overwrite reading that hasn't come back", async () => {
 	await rt.send(note);
 	tabletWrite(path.join(tablet, "smith2020.pdf"), HIGHLIGHTED);
 	await assert.rejects(rt.send(note), /has changes that aren't in the vault yet/);
-	// A file Library never sent is never overwritten either.
+	// A file Stacks never sent is never overwritten either.
 	const other = setup();
 	fs.writeFileSync(path.join(other.tablet, "smith2020.pdf"), HIGHLIGHTED);
 	await assert.rejects(other.rt.send(other.note), /has changes/);
@@ -298,7 +298,7 @@ test("a failing pre-extraction command is reported and the PDF is used as return
 	assert.ok(ui.notices.some((n) => /exited with 3: boom/.test(n)), ui.notices.join("\n"));
 });
 
-test("PDFs Library didn't send are brought back only when that option is on", async () => {
+test("PDFs Stacks didn't send are brought back only when that option is on", async () => {
 	for (const adopt of [false, true]) {
 		const { app, rt, tablet, note, file } = setup({ tabletAdoptUnknown: adopt });
 		tabletWrite(path.join(tablet, "smith2020.pdf"), HIGHLIGHTED);
@@ -312,7 +312,7 @@ test("PDFs Library didn't send are brought back only when that option is on", as
 
 test("a missing tablet folder is a clear error", async () => {
 	const { rt, note, settings } = setup();
-	settings.tabletFolder = path.join(os.tmpdir(), "library-no-such-folder-" + Date.now());
+	settings.tabletFolder = path.join(os.tmpdir(), "stacks-no-such-folder-" + Date.now());
 	await assert.rejects(rt.send(note), /doesn't exist or isn't reachable/);
 });
 

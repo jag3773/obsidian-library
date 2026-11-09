@@ -1,4 +1,4 @@
-# Library: Obsidian plugin specification
+# Stacks: Obsidian plugin specification
 
 A reference manager that lives entirely in an Obsidian vault. One Markdown note per source, metadata in properties, PDFs next to them, and Obsidian Bases as the library UI. MIT licensed.
 
@@ -83,7 +83,7 @@ All paths are vault-relative unless marked absolute. "Example (ekfocus)" shows t
 | Tablet folder (absolute, desktop only) | empty (feature off) | the MoonReader+ Dropbox folder | Folder your reading app syncs with |
 | Send to tablet on status | `reading` | `reading` | Copy the PDF to the tablet folder when status changes to this |
 | Status when highlights return | `reviewing` | `reviewing` | Set when a modified PDF comes back |
-| Bring back PDFs Library didn't send | off | on | Also import same-named, newer PDFs found in the tablet folder |
+| Bring back PDFs Stacks didn't send | off | on | Also import same-named, newer PDFs found in the tablet folder |
 | Status after extraction | empty (unchanged) | `processed` | Set after annotations are written, only moving forward in the status list. Off by default so the round trip's `reviewing` step isn't skipped |
 | Annotations heading | `## Annotations` | `## Annotations` | Heading the generated block goes under; the plugin owns only what is between its HTML comment markers |
 | Highlight color map | yellow → quote, red → important, green → tip ("Follow up"), blue → example ("Image"), default → quote, note → note | same colors as the author's Zotero Integration template | Color → callout type, with a label |
@@ -150,7 +150,7 @@ All requests go through Obsidian's `requestUrl`, which works on mobile and avoid
 
 - Status change to the "send" status copies the PDF to the tablet folder (desktop). The send records a SHA-256 of the copy, and never overwrites a tablet copy with changes that haven't been brought back.
 - A watcher on the tablet folder (desktop, while Obsidian runs, plus a scan on startup) matches returned PDFs by filename, waits until the file stops changing, and compares fingerprints: tablet changed only → returned; both changed → a dialog previews both copies (dates, sizes, annotation counts) and keeps both whichever is chosen. A returned PDF runs the optional pre-extraction command, is copied back over the attachment, sets the "returned" status, then is extracted. Records follow vault renames; a rename made while Obsidian was closed is found through the note's `pdf` link or by content hash.
-- Annotation extraction uses PDF.js: highlight, underline, strikeout, squiggly, sticky-note, text-box and rectangle annotations, their colors, comments, replies, page numbers and page labels. Highlighted text comes from the annotation's quadrilaterals intersected with the page's text content, rounded to whole words, with end-of-line hyphenation undone. Pages without text keep their highlights as page embeds. Output follows the color map into callouts with page links (`[[file.pdf#page=N]]`), grouped under page headings, each with a stable block ID derived from page and position, between `<!-- library:annotations:start -->` and `<!-- library:annotations:end -->` markers. Sets `highlights` and `last_highlighted`; writes nothing when nothing changed.
+- Annotation extraction uses PDF.js: highlight, underline, strikeout, squiggly, sticky-note, text-box and rectangle annotations, their colors, comments, replies, page numbers and page labels. Highlighted text comes from the annotation's quadrilaterals intersected with the page's text content, rounded to whole words, with end-of-line hyphenation undone. Pages without text keep their highlights as page embeds. Output follows the color map into callouts with page links (`[[file.pdf#page=N]]`), grouped under page headings, each with a stable block ID derived from page and position, between `<!-- stacks:annotations:start -->` and `<!-- stacks:annotations:end -->` markers. Sets `highlights` and `last_highlighted`; writes nothing when nothing changed.
 - Command: **Extract annotations for current note** (from the note or its PDF).
 - Command: **Send PDF to tablet folder** for a manual push.
 - Command: **Check tablet folder for returned PDFs**.
@@ -203,7 +203,7 @@ The plugin sends identifiers (ISBN, DOI, arXiv ID, URL) to the public services i
 - MIT license, `LICENSE` in the repo root.
 - Build with esbuild, as in the Obsidian sample plugin. Release assets: `main.js`, `manifest.json`, `styles.css`.
 - Beta distribution through BRAT from a GitHub repo, then submission to the community directory after stage 2.
-- Plugin id `library` is provisional; check the community list for clashes before submitting.
+- Plugin id `stacks` (display name Stacks). The earlier `library` id clashed with an existing community plugin.
 
 ## 9. Open questions
 

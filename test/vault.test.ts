@@ -30,7 +30,7 @@ function setup(overrides: Partial<LibrarySettings> = {}) {
 
 async function setupPlugin(overrides: Partial<LibrarySettings> = {}) {
 	const { app } = setup();
-	const plugin = new LibraryPlugin(app as any, { id: "library" } as any);
+	const plugin = new LibraryPlugin(app as any, { id: "stacks" } as any);
 	(plugin as any).data = overrides;
 	await plugin.onload();
 	return { app, plugin };

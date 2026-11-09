@@ -1,18 +1,18 @@
-.library-input {
+.stacks-input {
   width: 100%;
   min-width: 18em;
 }
 
-.library-invalid {
+.stacks-invalid {
   border-color: var(--text-error) !important;
 }
 
-.library-conflict {
+.stacks-conflict {
   width: 100%;
   margin: 0.5em 0 1em;
 }
-.library-conflict th,
-.library-conflict td {
+.stacks-conflict th,
+.stacks-conflict td {
   padding: 0.25em 0.5em;
   text-align: left;
 }

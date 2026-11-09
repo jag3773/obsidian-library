@@ -346,8 +346,8 @@ export async function collectAnnotations(doc: PdfDocumentLike): Promise<ExtractR
 
 // ---------------------------------------------------------------- rendering
 
-export const START_MARKER = "<!-- library:annotations:start -->";
-export const END_MARKER = "<!-- library:annotations:end -->";
+export const START_MARKER = "<!-- stacks:annotations:start -->";
+export const END_MARKER = "<!-- stacks:annotations:end -->";
 
 export interface RenderOptions {
 	/** Link target for the PDF, as fileToLinktext gives it (e.g. "smith2020.pdf"). */

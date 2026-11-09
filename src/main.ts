@@ -11,7 +11,7 @@ import { LibrarySettingTab, LibrarySettings, withDefaults } from "./settings";
 import { AddReferenceModal } from "./ui/AddReferenceModal";
 import { ConflictModal } from "./ui/ConflictModal";
 
-const PREFIX = "Library";
+const PREFIX = "Stacks";
 const COMPLETE_DEBOUNCE_MS = 2000;
 const INBOX_SETTLE_MS = 750;
 const BUSY_SETTLE_MS = 1500;
@@ -441,7 +441,7 @@ export default class LibraryPlugin extends Plugin {
 		});
 	}
 
-	/** Extract on save: a PDF in the attachments folder changed outside Library. */
+	/** Extract on save: a PDF in the attachments folder changed outside Stacks. */
 	private onPdfModified(f: TAbstractFile): void {
 		if (!(f instanceof TFile) || f.extension !== "pdf" || !this.settings.extractOnPdfSave) return;
 		if (this.busy.has(f.path) || !this.library.inFolder(f, this.settings.attachmentsFolder)) return;

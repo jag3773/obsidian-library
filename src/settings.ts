@@ -50,7 +50,7 @@ export interface LibrarySettings {
 	sendStatus: string;
 	/** Status set when a PDF comes back with changes. Empty: unchanged. */
 	returnStatus: string;
-	/** Also bring back PDFs in the tablet folder that Library didn't send, matched by attachment filename. */
+	/** Also bring back PDFs in the tablet folder that Stacks didn't send, matched by attachment filename. */
 	tabletAdoptUnknown: boolean;
 	/** What was sent to the tablet folder, by file name there. Kept by the plugin, not shown. */
 	tabletSent: Record<string, SentRecord>;
@@ -258,11 +258,11 @@ export class LibrarySettingTab extends PluginSettingTab {
 				t.setValue(s.citekeyPattern).onChange(async (v) => {
 					try {
 						parsePattern(v);
-						t.inputEl.removeClass("library-invalid");
+						t.inputEl.removeClass("stacks-invalid");
 						s.citekeyPattern = v.trim();
 						await save();
 					} catch {
-						t.inputEl.addClass("library-invalid");
+						t.inputEl.addClass("stacks-invalid");
 					}
 				})
 			);
@@ -331,7 +331,7 @@ export class LibrarySettingTab extends PluginSettingTab {
 			t.inputEl.rows = 7;
 			t.setValue(s.colorMap).onChange(async (v) => {
 				const { errors } = parseColorMap(v);
-				t.inputEl.toggleClass("library-invalid", errors.length > 0);
+				t.inputEl.toggleClass("stacks-invalid", errors.length > 0);
 				t.inputEl.title = errors.length ? `Not understood: ${errors.join("; ")}` : "";
 				s.colorMap = v;
 				await save();
@@ -374,7 +374,7 @@ export class LibrarySettingTab extends PluginSettingTab {
 		text("Send on status", "Copy the PDF to the tablet folder when a note's status changes to this. Leave empty to send only with the command.", () => s.sendStatus, (v) => (s.sendStatus = v), "reading");
 		text("Status when highlights return", "Set when a PDF comes back changed. Leave empty to keep the status.", () => s.returnStatus, (v) => (s.returnStatus = v), "reviewing");
 		new Setting(containerEl)
-			.setName("Bring back PDFs Library didn't send")
+			.setName("Bring back PDFs Stacks didn't send")
 			.setDesc("Also import PDFs already in the tablet folder whose name matches an attachment and which are newer than it.")
 			.addToggle((t) =>
 				t.setValue(s.tabletAdoptUnknown).onChange(async (v) => {

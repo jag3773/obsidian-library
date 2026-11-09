@@ -10,7 +10,7 @@ import { PathSuggest, filePaths, folderPaths } from "../src/ui/PathSuggest";
 
 async function setup() {
 	const app = new App();
-	const plugin = new LibraryPlugin(app as any, { id: "library" } as any);
+	const plugin = new LibraryPlugin(app as any, { id: "stacks" } as any);
 	await plugin.onload();
 	const tab = new LibrarySettingTab(app as any, plugin);
 	let rendered = 0;

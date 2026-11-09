@@ -30,7 +30,7 @@ export function nodeHost(app: App, modules: NodeModules = requireModules()): Hos
 		readFile: async (p) => new Uint8Array(await fsp.readFile(p)),
 		writeFile: async (p, data) => {
 			// Write beside the target, then rename, so a sync client never uploads half a file.
-			const tmp = `${p}.library-${process.pid}.tmp`;
+			const tmp = `${p}.stacks-${process.pid}.tmp`;
 			await fsp.writeFile(tmp, data);
 			await fsp.rename(tmp, p);
 		},
@@ -54,10 +54,10 @@ export function nodeHost(app: App, modules: NodeModules = requireModules()): Hos
 			const w = fs.watch(dir, (_event, name) => {
 				if (name) onChange(String(name));
 			});
-			w.on("error", (e) => console.warn("[Library] tablet folder watcher", e));
+			w.on("error", (e) => console.warn("[Stacks] tablet folder watcher", e));
 			return () => w.close();
 		},
-		tempDir: () => fsp.mkdtemp(path.join(os.tmpdir(), "obsidian-library-")),
+		tempDir: () => fsp.mkdtemp(path.join(os.tmpdir(), "obsidian-stacks-")),
 		removeDir: (p) => fsp.rm(p, { recursive: true, force: true }),
 		run: (command, cwd, timeoutMs) =>
 			new Promise((resolve) => {

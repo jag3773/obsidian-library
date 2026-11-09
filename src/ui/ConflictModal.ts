@@ -27,7 +27,7 @@ export class ConflictModal extends Modal {
 		contentEl.createEl("p", {
 			text: `The PDF for ${info.note.basename} was changed in the vault and in the tablet folder since it was sent. Choose which copy stays the note's PDF. The other is saved next to it and linked from the note, so nothing is lost.`,
 		});
-		const table = contentEl.createEl("table", { cls: "library-conflict" });
+		const table = contentEl.createEl("table", { cls: "stacks-conflict" });
 		const head = table.createEl("tr");
 		for (const h of ["", "Vault copy", "Tablet copy"]) head.createEl("th", { text: h });
 		const row = (label: string, a: string, b: string) => {

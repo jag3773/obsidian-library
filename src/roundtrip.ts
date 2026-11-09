@@ -12,7 +12,7 @@ import { Library } from "./library";
 import { readAnnotations } from "./pdf";
 import { LibrarySettings } from "./settings";
 
-/** What Library sent to the tablet folder, so a returned file can be matched and checked. */
+/** What Stacks sent to the tablet folder, so a returned file can be matched and checked. */
 export interface SentRecord {
 	/** File name in the tablet folder. */
 	file: string;
@@ -132,7 +132,7 @@ export class RoundTrip {
 		private save: () => Promise<void>,
 		private host: Host,
 		private ui: RoundTripUi,
-		/** Mark a vault path as being written by Library, so its own writes don't retrigger handlers. */
+		/** Mark a vault path as being written by Stacks, so its own writes don't retrigger handlers. */
 		private markBusy: (path: string) => void = () => undefined,
 		private active: () => boolean = () => true
 	) {}
@@ -155,7 +155,7 @@ export class RoundTrip {
 
 	private async requireFolder(): Promise<string> {
 		const folder = this.folder();
-		if (!folder) throw new Error("set a tablet folder in Library's settings first.");
+		if (!folder) throw new Error("set a tablet folder in Stacks' settings first.");
 		if (!(await this.host.isDirectory(folder))) throw new Error(`the tablet folder ${folder} doesn't exist or isn't reachable.`);
 		return folder;
 	}
@@ -239,10 +239,10 @@ export class RoundTrip {
 				try {
 					if (await this.handle(folder, name)) n++;
 				} catch (e) {
-					this.ui.notice(`Library: couldn't bring back ${name}: ${e instanceof Error ? e.message : String(e)}`);
+					this.ui.notice(`Stacks: couldn't bring back ${name}: ${e instanceof Error ? e.message : String(e)}`);
 				}
 			}
-			if (explicit) this.ui.notice(n ? `Library: brought back ${n} PDF${n === 1 ? "" : "s"} from the tablet folder.` : "Library: no changed PDFs in the tablet folder.");
+			if (explicit) this.ui.notice(n ? `Stacks: brought back ${n} PDF${n === 1 ? "" : "s"} from the tablet folder.` : "Stacks: no changed PDFs in the tablet folder.");
 			return n;
 		});
 	}
@@ -255,7 +255,7 @@ export class RoundTrip {
 			try {
 				return await this.handle(folder, name);
 			} catch (e) {
-				this.ui.notice(`Library: couldn't bring back ${name}: ${e instanceof Error ? e.message : String(e)}`);
+				this.ui.notice(`Stacks: couldn't bring back ${name}: ${e instanceof Error ? e.message : String(e)}`);
 				return false;
 			}
 		});
@@ -295,7 +295,7 @@ export class RoundTrip {
 		return note ? { pdf, note } : null;
 	}
 
-	/** A PDF in the tablet folder Library didn't send: an attachment of the same name, if it's newer. */
+	/** A PDF in the tablet folder Stacks didn't send: an attachment of the same name, if it's newer. */
 	private async adopt(name: string, stat: FileStat): Promise<{ pdf: TFile; note: TFile } | null> {
 		if (!this.s.tabletAdoptUnknown) return null;
 		const pdf = this.app.vault
@@ -317,7 +317,7 @@ export class RoundTrip {
 		if (!stat) return false;
 		const target = rec ? await this.attachmentFor(rec) : await this.adopt(name, stat);
 		if (!target) {
-			if (rec) this.ui.notice(`Library: ${name} changed in the tablet folder, but its attachment is no longer in the vault.`);
+			if (rec) this.ui.notice(`Stacks: ${name} changed in the tablet folder, but its attachment is no longer in the vault.`);
 			return false;
 		}
 		const theirs = await this.host.readFile(path);
@@ -344,7 +344,7 @@ export class RoundTrip {
 			if (choice === "vault") {
 				await this.keepCopy(target, theirs, "tablet");
 				await this.record(target.pdf, target.note, ourHash, theirHash, stat, "returned");
-				this.ui.notice(`Library: kept the vault copy of ${target.pdf.name}; the tablet copy was saved next to it.`);
+				this.ui.notice(`Stacks: kept the vault copy of ${target.pdf.name}; the tablet copy was saved next to it.`);
 				return false;
 			}
 			await this.keepCopy(target, ours, "vault");
@@ -379,7 +379,7 @@ export class RoundTrip {
 			try {
 				bytes = (await runPreExtraction(this.host, s.preExtractionCommand, theirs, target.pdf.name)) ?? theirs;
 			} catch (e) {
-				this.ui.notice(`Library: ${e instanceof Error ? e.message : String(e)}. Using the PDF as it came back.`);
+				this.ui.notice(`Stacks: ${e instanceof Error ? e.message : String(e)}. Using the PDF as it came back.`);
 			}
 		}
 		if (!this.active()) return;
@@ -392,13 +392,13 @@ export class RoundTrip {
 				f[this.library.prop("status")] = s.returnStatus.trim();
 			});
 		}
-		this.ui.notice(`Library: ${target.pdf.name} came back from the tablet; extracting annotations…`);
+		this.ui.notice(`Stacks: ${target.pdf.name} came back from the tablet; extracting annotations…`);
 		try {
 			this.markBusy(target.note.path);
 			const summary: ExtractSummary = await this.extractor.extract(target.note, toArrayBuffer(bytes));
-			this.ui.notice(`Library: ${describeExtraction(summary)}`);
+			this.ui.notice(`Stacks: ${describeExtraction(summary)}`);
 		} catch (e) {
-			this.ui.notice(`Library: brought back ${target.pdf.name}, but extraction failed: ${e instanceof Error ? e.message : String(e)}`);
+			this.ui.notice(`Stacks: brought back ${target.pdf.name}, but extraction failed: ${e instanceof Error ? e.message : String(e)}`);
 		}
 	}
 
@@ -422,7 +422,7 @@ export class RoundTrip {
 				);
 			});
 		} catch (e) {
-			console.warn("[Library] can't watch the tablet folder", e);
+			console.warn("[Stacks] can't watch the tablet folder", e);
 		}
 	}
 
