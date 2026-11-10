@@ -8,9 +8,19 @@ The paper you saved. The passage that changed your mind. The note that became a 
 
 If Obsidian is where you think, it should be enough to manage the sources behind that thinking, too. That is the ambition: one app for your library and the knowledge you make from it.
 
-[Get started](#install) · [Available today](#available-today) · [Try it and tell us](#try-it-and-tell-us) · [The road ahead](#the-road-ahead)
+[Get started](#get-started) · [Available today](#available-today) · [Try it and tell us](#try-it-and-tell-us) · [The road ahead](#the-road-ahead)
 
 > **Early release.** Stacks is in Obsidian's community plugin directory. Capture, metadata lookup, citekeys, PDF filing, library views, annotation extraction, imports, bibliography export, formatted citations, and library maintenance are all available. It is young software, tested on its author's own vault so far, so keep a backup of your vault and [tell us](#try-it-and-tell-us) what you find.
+
+## Get started
+
+1. **Install Stacks.** In Obsidian, open **Settings → Community plugins**, choose **Browse**, search for **Stacks**, then install and enable it. (Other options are under [Install](#install).)
+2. **Choose your folders.** Open **Settings → Stacks**. Under **Folders**, set your **References folder** (where reference notes live), **Attachments folder** (where PDFs are filed), and **Inbox folder** (where new clips and PDFs land). The defaults, `References`, `References/attachments` and `Inbox`, work fine if you have no preference.
+3. **Create your library base.** Further down, under **Library base**, press **Create base**. Stacks writes a starter `.base` file with views for each reading status, so you can browse your library right away. (Already have a Base? Pick it in the **Base** field instead.) Bases must be enabled in Obsidian.
+4. **Add your first reference.** Click the **Add reference** icon (the library icon) in the left ribbon, or run **Stacks: Add reference** from the command palette. Paste an ISBN, DOI, arXiv ID, or URL. Stacks looks up the details, creates the note, and opens it.
+5. **Clip from the web.** Install [Obsidian Web Clipper](https://obsidian.md/clipper) in your browser and set it to save into your inbox folder. Anything you clip lands in the inbox, and Stacks picks it up automatically: it fills in the metadata, gives the note a citekey, and files it in your references folder. You can drop PDFs into the inbox too. For a ready-made template, see [capturing with Web Clipper](docs/web-clipper.md).
+
+That's it. Your library is a set of ordinary notes in your vault, ready to link, read, and cite.
 
 ## Let your reading become part of your thinking
 
