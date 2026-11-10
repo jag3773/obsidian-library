@@ -3,7 +3,7 @@
  * main.ts, which only calls registerBatchCommands().
  */
 
-import { Menu, Notice, TAbstractFile, TFile, TFolder, normalizePath, stringifyYaml } from "obsidian";
+import { Menu, Notice, TAbstractFile, TFile, TFolder, normalizePath, requireApiVersion, stringifyYaml } from "obsidian";
 import { BatchAction } from "./batch";
 import { BatchActions, BatchScope } from "./batchActions";
 import { starterBase } from "./bases";
@@ -72,9 +72,9 @@ export function registerBatchCommands(plugin: LibraryPlugin, fetcher: Fetcher, s
 	);
 
 	// A Bases view whose rows Stacks can act on (Obsidian 1.10 and later, with Bases enabled).
-	const factory = batchViewFactory((files) => open([batch.fixed(`${files.length} in this Base view`, files)]));
-	if (factory && typeof plugin.registerBasesView === "function") {
-		plugin.registerBasesView(BATCH_VIEW_TYPE, { name: "Stacks batch", icon: "list-checks", factory });
+	if (requireApiVersion("1.10.0")) {
+		const factory = batchViewFactory((files) => open([batch.fixed(`${files.length} in this Base view`, files)]));
+		if (factory) plugin.registerBasesView(BATCH_VIEW_TYPE, { name: "Stacks batch", icon: "list-checks", factory });
 	}
 	return batch;
 }

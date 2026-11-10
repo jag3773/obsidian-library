@@ -72,7 +72,7 @@ export class BatchModal extends Modal {
 		const el = this.formEl;
 		el.empty();
 		new Setting(el).setName("Notes").addDropdown((d) => {
-			this.scopes.forEach((s, i) => d.addOption(String(i), s.label));
+			for (const [i, s] of this.scopes.entries()) d.addOption(String(i), s.label);
 			d.setValue(String(this.scopeIndex)).onChange((v) => {
 				this.scopeIndex = Number(v);
 				this.renderPreview();
