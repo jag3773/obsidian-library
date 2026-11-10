@@ -1,10 +1,19 @@
 # Publishes a GitHub release with the files Obsidian installs.
-# Trigger: push a tag equal to the version in manifest.json, e.g.
-#   git tag 0.1.1 && git push origin 0.1.1
+#
+# Two ways to trigger it:
+# - Merge a version bump to main. When manifest.json names a version that has
+#   no tag yet, this workflow creates the tag and the release on that commit.
+#   Pushes to main that don't change the version do nothing.
+# - Push a tag equal to the version in manifest.json, e.g.
+#     git tag 0.4.1 && git push origin 0.4.1
+#
+# A tag created here by the workflow's own token does not start this workflow
+# again, so each version is released once.
 name: Release
 
 on:
   push:
+    branches: [main]
     tags: ["*"]
 
 permissions:
@@ -12,41 +21,74 @@ permissions:
   id-token: write
   attestations: write
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+
+      - name: Decide which version to release
+        id: version
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            tag="$GITHUB_REF_NAME"
+          else
+            tag=$(node -p "require('./manifest.json').version")
+            # A version that already has a tag was released before; nothing to do.
+            if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+              echo "Tag $tag already exists; no release needed."
+              exit 0
+            fi
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - if: steps.version.outputs.tag
+        uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
-      - run: npm ci
-      - run: npm test
-      - run: npm run build
+      - if: steps.version.outputs.tag
+        run: npm ci
+      - if: steps.version.outputs.tag
+        run: npm test
+      - if: steps.version.outputs.tag
+        run: npm run build
+
       - name: Check the tag matches manifest.json and package.json
+        if: steps.version.outputs.tag
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
-          tag="${GITHUB_REF_NAME}"
           manifest=$(node -p "require('./manifest.json').version")
           pkg=$(node -p "require('./package.json').version")
-          if [ "$tag" != "$manifest" ] || [ "$tag" != "$pkg" ]; then
-            echo "Tag $tag does not match manifest.json ($manifest) and package.json ($pkg)" >&2
+          if [ "$TAG" != "$manifest" ] || [ "$TAG" != "$pkg" ]; then
+            echo "Tag $TAG does not match manifest.json ($manifest) and package.json ($pkg)" >&2
             exit 1
           fi
-          node -e "const v=require('./versions.json'); if(!v['$tag']) { console.error('versions.json has no entry for $tag'); process.exit(1) }"
+          node -e "const v=require('./versions.json'); if(!v[process.env.TAG]) { console.error('versions.json has no entry for ' + process.env.TAG); process.exit(1) }"
+
       - name: Attest build provenance
+        if: steps.version.outputs.tag
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: |
             main.js
             manifest.json
             styles.css
+
       - name: Create release
+        if: steps.version.outputs.tag
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
           # A tag with a hyphen (0.4.0-beta.1) is a pre-release; a plain version is a full release.
           prerelease=""
-          case "$GITHUB_REF_NAME" in *-*) prerelease="--prerelease" ;; esac
-          gh release create "$GITHUB_REF_NAME" main.js manifest.json styles.css \
-            --title "$GITHUB_REF_NAME" --generate-notes $prerelease
+          case "$TAG" in *-*) prerelease="--prerelease" ;; esac
+          # --target creates the tag on this commit when it doesn't exist yet (the main-branch path).
+          gh release create "$TAG" main.js manifest.json styles.css \
+            --target "$GITHUB_SHA" --title "$TAG" --generate-notes $prerelease
