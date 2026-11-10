@@ -2,6 +2,7 @@
 // Obsidian stand-in (test/mocks/obsidian.ts) in place of the real "obsidian" module.
 import esbuild from "esbuild";
 import { readdirSync } from "node:fs";
+import { xmlText } from "./scripts/esbuild-xml.mjs";
 
 const entries = readdirSync("test").filter((f) => f.endsWith(".test.ts")).map((f) => `test/${f}`);
 await esbuild.build({
@@ -14,5 +15,6 @@ await esbuild.build({
   alias: { obsidian: "./test/mocks/obsidian.ts" },
   // Real npm packages used only by tests are loaded by Node, not bundled.
   external: ["yaml", "linkedom", "pdfjs-dist"],
+  plugins: [xmlText],
   logLevel: "warning",
 });

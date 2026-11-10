@@ -394,6 +394,11 @@ export class Plugin extends Component {
 	addRibbonIcon() {
 		return {};
 	}
+	basesViews = new Map<string, any>();
+	registerBasesView(id: string, registration: any) {
+		this.basesViews.set(id, registration);
+		return true;
+	}
 	async loadData() {
 		return this.data;
 	}
@@ -407,12 +412,29 @@ export class Plugin extends Component {
 	}
 }
 
+const stubEl = (): any => ({ empty() {}, createEl: () => stubEl() });
+
 export class Modal {
-	contentEl: any = { empty() {}, createEl() {} };
+	contentEl: any = stubEl();
 	constructor(public app: App) {}
 	open() {}
 	close() {}
 	setTitle() {}
+}
+export class SuggestModal<T> extends Modal {
+	emptyStateText = "";
+	static opened: SuggestModal<any>[] = [];
+	setPlaceholder() {}
+	setInstructions() {}
+	open() {
+		SuggestModal.opened.push(this);
+	}
+	/** Test hook: choose the first suggestion for a query, as Enter would. */
+	pick(query: string): T | undefined {
+		const item = (this as any).getSuggestions(query)[0] as T | undefined;
+		if (item !== undefined) (this as any).onChooseSuggestion(item, {});
+		return item;
+	}
 }
 export class PluginSettingTab {
 	containerEl: any = { empty() {}, createEl() {} };
@@ -434,6 +456,69 @@ export class AbstractInputSuggest<T> {
 	}
 }
 
+/** Test hooks: every Setting made, with its dropdown and buttons. A disabled button ignores clicks. */
+export interface MockButton {
+	text: string;
+	disabled: boolean;
+	click(): void;
+}
 export class Setting {
-	constructor(_el: unknown) {}
+	static all: Setting[] = [];
+	name = "";
+	dropdown?: { value: string; change(value: string): void };
+	buttons: MockButton[] = [];
+	constructor(_el: unknown) {
+		Setting.all.push(this);
+	}
+	setName(name: string) {
+		this.name = name;
+		return this;
+	}
+	setDesc() {
+		return this;
+	}
+	setHeading() {
+		return this;
+	}
+	addDropdown(cb: (d: any) => void) {
+		const d = { value: "", handler: (_v: string) => {}, change: (v: string) => d.handler(v) };
+		const api: any = {
+			addOption: () => api,
+			setValue: (v: string) => ((d.value = v), api),
+			onChange: (fn: (v: string) => void) => ((d.handler = fn), api),
+		};
+		this.dropdown = d;
+		cb(api);
+		return this;
+	}
+	addButton(cb: (b: any) => void) {
+		let handler = () => {};
+		const b: MockButton = { text: "", disabled: false, click: () => void (b.disabled || handler()) };
+		const api: any = {
+			setButtonText: (t: string) => ((b.text = t), api),
+			setCta: () => api,
+			setDisabled: (v: boolean) => ((b.disabled = v), api),
+			onClick: (fn: () => void) => ((handler = fn), api),
+		};
+		this.buttons.push(b);
+		cb(api);
+		return this;
+	}
+}
+
+export class BasesView extends Component {
+	app!: App;
+	data: { data: { file: TFile }[] } = { data: [] };
+	constructor(_controller: unknown) {
+		super();
+	}
+}
+export class QueryController extends Component {}
+/** Test hook: the app version requireApiVersion compares against. */
+export const api = { version: "1.10.0" };
+export function requireApiVersion(version: string): boolean {
+	const parts = (v: string) => v.split(".").map(Number);
+	const [a, b] = [parts(api.version), parts(version)];
+	for (let i = 0; i < 3; i++) if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) > (b[i] ?? 0);
+	return true;
 }

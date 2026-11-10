@@ -2,7 +2,7 @@
 
 A reference manager that lives entirely in an Obsidian vault. One Markdown note per source, metadata in properties, PDFs next to them, and Obsidian Bases as the library UI. MIT licensed.
 
-Status: stages 1 and 2 implemented in `src/`. Stage 3 is specified here and not yet built. User documentation for stage 2: [docs/annotations.md](docs/annotations.md).
+Status: stages 1 and 2 implemented in `src/`. Stage 3 is largely built: see the "Done" items in section 5. User documentation for stage 2: [docs/annotations.md](docs/annotations.md); for stage 3, the other guides in `docs/`.
 
 ## 1. Goals
 
@@ -72,7 +72,7 @@ All paths are vault-relative unless marked absolute. "Example (ekfocus)" shows t
 | Process inbox automatically | on | on | React to new files in the inbox folder |
 | Complete notes on property edit | on | on | A note in the references folder with an ISBN, DOI or URL and no citekey gets filled in and renamed |
 | URL properties in clipped notes | `url, source` | `url, source` | Where to look for the URL in Web Clipper output |
-| Crossref contact email | empty | user's choice | Sent as `mailto` for Crossref's polite pool; never filled by default |
+| Contact email | empty | user's choice | Sent as `mailto` for Crossref's polite pool, and to Unpaywall (which requires it) when Find PDF runs; never filled by default |
 | Library base | empty | `Library.base` | The base that shows the library. Its `file.inFolder()` sets the references folder; its properties (and those on notes in that folder) are matched to the fields below |
 | Fields | logical names | matched from the base | Map of logical → real property names (section 3), chosen from the base's properties in dropdowns |
 
@@ -95,8 +95,8 @@ All paths are vault-relative unless marked absolute. "Example (ekfocus)" shows t
 | Setting | Default | Purpose |
 |---|---|---|
 | Bibliography file, format, filter, automatic | `library.json`, CSL-JSON, none, off | Done: CSL-JSON, BibLaTeX or BibTeX export, optionally filtered by a property and rewritten automatically ([#19](https://github.com/jag3773/obsidian-stacks/issues/19)) |
-| Citation style | `chicago-author-date` | CSL style for the "copy formatted citation" command |
-| Health check scope | all | Which checks the report runs |
+| Citation style, locale, insert format, ask for a page | bundled Chicago author-date, en-US, Pandoc, off | Done: a `.csl` style and CSL locale from the vault for the formatted citation and bibliography commands; how **Insert citation** writes citations ([#20](https://github.com/jag3773/obsidian-stacks/issues/20), [#21](https://github.com/jag3773/obsidian-stacks/issues/21)) |
+| Health check: days in one status, statuses to watch | 365, `queued, reading, reviewing` | Done: when the report lists an item as stuck; 0 days turns that check off ([#28](https://github.com/jag3773/obsidian-stacks/issues/28)) |
 
 ### 4.4 Citekey pattern
 
@@ -142,7 +142,12 @@ Metadata sources (no API keys):
 | ISBN | Open Library (`/api/books?jscmd=data`) | Google Books volumes API |
 | DOI | Crossref `/works/{doi}` | doi.org CSL-JSON content negotiation |
 | arXiv | arXiv export API | — |
-| URL | Page `<meta>` tags: Highwire `citation_*`, Open Graph, Dublin Core, `<title>` | If the page has `citation_doi`, use Crossref |
+| PMID | NCBI E-utilities `esummary` (JSON) | Crossref when the record names a DOI; PubMed fills its gaps |
+| URL | Page `<meta>` tags: Highwire `citation_*`, Open Graph, Dublin Core, `<title>`; COinS when the page's one span describes it | If the page has `citation_doi`, use Crossref; `citation_pmid`, E-utilities. PubMed URLs go to E-utilities directly |
+
+Web Clipper is the primary handoff for web pages; docs/web-clipper.md lists the properties it should write and a template. A clip's `doi` is looked up when the page lookup finds none.
+
+Find PDF (#24, manual only): **Find PDF for current reference** asks Unpaywall (DOI plus the contact email) and the landing page (`citation_pdf_url`), shows the sources with Unpaywall's host type and version, downloads the chosen one after confirmation, checks the content type and `%PDF-` signature, and attaches it with the normal naming rules, never replacing a file. Pure parts in `src/metadata/fulltext.ts`, vault side in `src/fulltext.ts`. See docs/find-pdf.md.
 
 All requests go through Obsidian's `requestUrl`, which works on mobile and avoids CORS.
 
@@ -157,11 +162,15 @@ All requests go through Obsidian's `requestUrl`, which works on mobile and avoid
 
 ### Stage 3: citations and maintenance
 
-- **Copy formatted citation** and **Copy citekey as Pandoc citation** (`[@key]`).
+- Done: **Copy formatted citation**, **Copy formatted bibliography** (a reference, a selection, a folder, a base's folder, or the references a draft cites) and **Copy citekey as Pandoc citation** (`[@key]`), formatted by citeproc-js with a bundled Chicago author-date style and en-US locale or a `.csl` file from the vault, copied as HTML and plain text ([#20](https://github.com/jag3773/obsidian-stacks/issues/20)). `src/csl.ts`; licences in NOTICE.md.
+- Done: **Insert citation**, a picker over reference notes from the metadata cache, searchable by citekey, title, author and year; inserts `[@key]`, `[[key]]` or both, with an optional locator, and joins a Pandoc citation at the cursor (`[@a; @b]`) ([#21](https://github.com/jag3773/obsidian-stacks/issues/21)). `src/cite.ts`; the Pandoc and Quarto path is in docs/citing.md.
 - Done: bibliography export to CSL-JSON (for Pandoc, Quarto and the Pandoc Reference List plugin), BibLaTeX or BibTeX, regenerated after reference changes with a debounce. Written without citation.js: the mapping is `src/citation.ts`, documented in docs/citation-fields.md.
-- **Health check** report note: notes without a citekey, duplicate citekeys or DOIs/ISBNs, `pdf` links that don't resolve, PDFs in the attachments folder with no note, items stuck in a status longer than a set number of days.
+- Done: **Health check** report note ([#28](https://github.com/jag3773/obsidian-stacks/issues/28)): broken frontmatter, missing or duplicate citekeys, citekey ≠ filename, `pdf` links that don't resolve, PDFs in the attachments folder with no note, possible duplicates, items in a watched status longer than N days (from the later of mtime and `added`), missing `type` and missing citation fields. Read-only; the repair (relink `pdf` to the PDF named after the citekey) is a separate, previewed command. Pure logic in `src/health.ts`; see docs/maintenance.md.
+- Done: **Duplicate review and merge** ([#26](https://github.com/jag3773/obsidian-stacks/issues/26)): exact matches only (DOI, ISBN, URL, or normalized title + year), each with its reason. Merge keeps the note named after its citekey (or the one chosen), unions list properties, fills empty ones, copies annotations and prose the kept note lacks, rewrites links to the other note in every Markdown file (`vault.process`), then trashes it. Previewed first; no journal (vault backup or git covers recovery). `src/duplicates.ts`, `src/links.ts`, `src/maintenance.ts`.
 - Done: **Import from Zotero (Better BibTeX JSON)**, the conversion this project used once, generalized ([#18](https://github.com/jag3773/obsidian-stacks/issues/18)). Matches by filename, citekey property, Zotero item key, then a unique title; adds properties without touching bodies; creates notes for unmatched items; previews first; reports, and can be undone. See docs/migrating-from-zotero.md.
+- Done: **Import bibliography file (CSL-JSON, BibTeX, RIS)** ([#17](https://github.com/jag3773/obsidian-stacks/issues/17)). Pure parsers in `src/importers/` turn each format into the records the Zotero import now also produces; one planner (`src/importers/plan.ts`) matches, previews, reports and undoes for every format, adding a match by a DOI or ISBN found only once. Supplied citekeys are kept, malformed records are reported one by one, attachments outside the vault are listed and never copied, and an import can be stopped and run again. See docs/importing.md.
 - Done: manual references and a reviewed metadata refresh ([#16](https://github.com/jag3773/obsidian-stacks/issues/16)); complete citation fields and creator roles ([#15](https://github.com/jag3773/obsidian-stacks/issues/15)).
+- Done: batch edits with a preview (status, collections, citekeys, completion) over an explicit scope, a **Stacks batch** Bases view whose rows Obsidian selects, and **Create library base** with reading-workflow views ([#27](https://github.com/jag3773/obsidian-stacks/issues/27)); offline clips wait in the inbox, the inbox is processed at startup, and filing re-checks unindexed notes and identical PDFs ([#30](https://github.com/jag3773/obsidian-stacks/issues/30)); PDF full-text search documented, not built ([#25](https://github.com/jag3773/obsidian-stacks/issues/25)). See docs/batch-and-collections.md, docs/sync-and-mobile.md, docs/searching.md.
 
 ## 6. Architecture
 
@@ -184,6 +193,9 @@ src/
   roundtrip.ts         tablet send / watch / return / conflict, over a Host interface
   desktop.ts           the Host from Node's fs and child_process (desktop only, loaded lazily)
   ui/AddReferenceModal.ts, ui/ConflictModal.ts
+  batch.ts             batch actions on properties, preview, cancellable runner (pure)
+  batchActions.ts      batch scopes and per-note execution; batchCommands.ts wires commands and the Bases view
+  sync.ts              offline detection and byte comparison for sync-safe filing (pure)
 test/                  node:test suites for the pure modules
 ```
 
@@ -197,13 +209,13 @@ Design rules:
 
 ## 7. Privacy
 
-The plugin sends identifiers (ISBN, DOI, arXiv ID, URL) to the public services in section 5 and nothing else. No telemetry, no note content, no API keys. The Crossref contact email is only sent when the user sets it.
+The plugin sends identifiers (ISBN, DOI, arXiv ID, PMID, URL) to the public services in section 5 (including NCBI E-utilities for PubMed) and nothing else. No telemetry, no note content, no API keys. The contact email is only sent when the user sets it: to Crossref with lookups, and to Unpaywall only when the user runs Find PDF.
 
 ## 8. Release
 
 - MIT license, `LICENSE` in the repo root.
 - Build with esbuild, as in the Obsidian sample plugin. Release assets: `main.js`, `manifest.json`, `styles.css`.
-- Beta distribution through BRAT from a GitHub repo, then submission to the community directory after stage 2.
+- Distributed through Obsidian's community plugin directory; a plain version tag publishes a full release, a hyphenated tag a pre-release.
 - Plugin id `stacks` (display name Stacks). The earlier `library` id clashed with an existing community plugin.
 
 ## 9. Open questions

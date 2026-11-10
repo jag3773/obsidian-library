@@ -16,9 +16,16 @@ import { NewReferenceModal } from "./ui/NewReferenceModal";
 import { RefreshModal } from "./ui/RefreshModal";
 import { ImportModal } from "./ui/ImportModal";
 import { ReportModal } from "./ui/ReportModal";
-import { ZoteroImporter } from "./zoteroImport";
+import { ReferenceImporter, ZoteroImporter } from "./zoteroImport";
+import { FileImporter } from "./fileImport";
+import { ImportChoices } from "./importers/plan";
 import { ConflictModal } from "./ui/ConflictModal";
+import { FindPdfModal } from "./ui/FindPdfModal";
+import { FullText } from "./fulltext";
 import { asText } from "./text";
+import { Citations } from "./citations";
+import { registerMaintenanceCommands } from "./maintenanceCommands";
+import { registerBatchCommands } from "./batchCommands";
 
 const PREFIX = "Stacks";
 const COMPLETE_DEBOUNCE_MS = 2000;
@@ -26,6 +33,8 @@ const INBOX_SETTLE_MS = 750;
 const BUSY_SETTLE_MS = 1500;
 const EXPORT_DEBOUNCE_MS = 5000;
 const PDF_SAVE_DEBOUNCE_MS = 2000;
+/** Wait after startup before processing the inbox, so a sync client can bring files in first. */
+const STARTUP_INBOX_MS = 5000;
 
 const sameId = (a: Identifier | null, b: Identifier | null) => !!a && !!b && a.kind === b.kind && a.value === b.value;
 
@@ -35,7 +44,9 @@ export default class LibraryPlugin extends Plugin {
 	inbox!: Inbox;
 	exporter!: BibliographyExporter;
 	importer!: ZoteroImporter;
+	fileImporter!: FileImporter;
 	extractor!: Extractor;
+	citations!: Citations;
 	/** Desktop only; null on mobile. */
 	roundTrip: RoundTrip | null = null;
 	private host: Host | null = null;
@@ -68,16 +79,19 @@ export default class LibraryPlugin extends Plugin {
 		await this.loadSettings();
 		this.fetcher = async (url, headers) => {
 			const res = await requestUrl({ url, headers, throw: false });
-			return { status: res.status, text: res.text };
+			// The text is decoded only when read, so a downloaded PDF isn't decoded as text.
+			return { status: res.status, headers: res.headers, body: res.arrayBuffer, get text() { return res.text; } };
 		};
 		this.library = new Library(this.app, () => this.settings, () => this.alive);
 		this.inbox = new Inbox(this.app, this.library, this.fetcher, () => this.settings);
 		this.exporter = new BibliographyExporter(this.app, this.library, () => this.settings);
 		const pluginDir = this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`;
-		this.importer = new ZoteroImporter(this.app, this.library, () => this.settings, `${pluginDir}/backups`, async (path) => {
+		const onBackup = async (path: string) => {
 			this.settings.lastImportBackup = path;
 			await this.saveSettings();
-		});
+		};
+		this.importer = new ZoteroImporter(this.app, this.library, () => this.settings, `${pluginDir}/backups`, onBackup);
+		this.fileImporter = new FileImporter(this.app, this.library, () => this.settings, `${pluginDir}/backups`, onBackup);
 		this.extractor = new Extractor(this.app, this.library, () => this.settings, () => this.alive);
 		this.host = this.createHost();
 		if (this.host)
@@ -123,6 +137,18 @@ export default class LibraryPlugin extends Plugin {
 			},
 		});
 		this.addCommand({ id: "process-inbox", name: "Process inbox now", callback: () => this.processWholeInbox() });
+		// Find PDF (#24): only ever on request.
+		const fullText = new FullText(this.app, this.library, this.fetcher, () => this.settings, (note, search) => FindPdfModal.ask(this.app, note.basename, search));
+		this.addCommand({
+			id: "find-pdf",
+			name: "Find PDF for current reference",
+			checkCallback: (checking) => {
+				const file = this.app.workspace.getActiveFile();
+				if (!file || !this.library.isReference(file)) return false;
+				if (!checking) void this.guard(file, () => fullText.find(file));
+				return true;
+			},
+		});
 		this.addCommand({
 			id: "regenerate-citekey",
 			name: "Regenerate citekey for current note",
@@ -140,8 +166,13 @@ export default class LibraryPlugin extends Plugin {
 
 		this.addCommand({ id: "import-zotero", name: "Import from Zotero (Better BibTeX JSON)", callback: () => this.openImport() });
 		this.addCommand({
+			id: "import-bibliography",
+			name: "Import bibliography file (CSL-JSON, BibTeX, RIS)",
+			callback: () => this.openImport(this.fileImporter, this.settings.bibliographyImport),
+		});
+		this.addCommand({
 			id: "undo-zotero-import",
-			name: "Undo last Zotero import",
+			name: "Undo last import",
 			checkCallback: (checking) => {
 				if (!this.settings.lastImportBackup) return false;
 				if (!checking) void this.undoImport();
@@ -172,6 +203,9 @@ export default class LibraryPlugin extends Plugin {
 				);
 			})
 		);
+		// Formatted citations and inserting citations (docs/citing.md).
+		this.citations = new Citations(this);
+		this.citations.register();
 		this.addCommand({
 			id: "extract-annotations",
 			name: "Extract annotations for current note",
@@ -201,6 +235,11 @@ export default class LibraryPlugin extends Plugin {
 				return true;
 			},
 		});
+		// Batch edits, the library base command and the Stacks batch view for Bases (#27).
+		registerBatchCommands(this, this.fetcher, (path) => this.settle(path));
+
+		// Health check, PDF relinking and duplicate merging (#26, #28).
+		registerMaintenanceCommands(this);
 
 		// Register after the initial index so existing files don't fire "create".
 		this.app.workspace.onLayoutReady(() => {
@@ -236,6 +275,8 @@ export default class LibraryPlugin extends Plugin {
 			);
 			this.layoutReady = true;
 			this.startRoundTrip();
+			// Files that reached the inbox while Obsidian was closed, or offline clips left to retry (#30).
+			if (this.settings.processInboxAutomatically) this.later(() => void this.processWholeInbox(true), STARTUP_INBOX_MS);
 		});
 	}
 
@@ -325,7 +366,7 @@ export default class LibraryPlugin extends Plugin {
 	async addByIdentifier(input: string): Promise<void> {
 		const id = detectIdentifier(input);
 		if (!id) {
-			new Notice(`${PREFIX}: "${input}" doesn't look like an ISBN, DOI, arXiv ID or URL.`);
+			new Notice(`${PREFIX}: "${input}" doesn't look like an ISBN, DOI, arXiv ID, PMID or URL.`);
 			return;
 		}
 		const pending = new Notice(`${PREFIX}: looking up ${id.kind.toUpperCase()} ${id.value}…`, 0);
@@ -337,7 +378,7 @@ export default class LibraryPlugin extends Plugin {
 			}
 			// Duplicate check and creation happen together, so overlapping captures can't both create.
 			const { file, existing } = await this.library.exclusive(async () => {
-				const found = this.library.findExisting(data);
+				const found = await this.library.findExistingOnDisk(data);
 				if (found) return { file: found, existing: true };
 				const created = await this.library.create(data, this.settings.defaultStatus);
 				this.settle(created.path);
@@ -365,10 +406,11 @@ export default class LibraryPlugin extends Plugin {
 		}, INBOX_SETTLE_MS);
 	}
 
-	private async processWholeInbox(): Promise<void> {
+	/** Process every file in the inbox. `quiet` (at startup) says nothing when it is empty. */
+	private async processWholeInbox(quiet = false): Promise<void> {
 		const files = this.app.vault.getFiles().filter((f) => this.inbox.accepts(f));
 		if (!files.length) {
-			new Notice(`${PREFIX}: inbox is empty.`);
+			if (!quiet) new Notice(`${PREFIX}: inbox is empty.`);
 			return;
 		}
 		let done = 0;
@@ -509,7 +551,7 @@ export default class LibraryPlugin extends Plugin {
 	async createManualReference(data: ReferenceData): Promise<TFile | undefined> {
 		try {
 			const { file, existing } = await this.library.exclusive(async () => {
-				const found = this.library.findExisting(data);
+				const found = await this.library.findExistingOnDisk(data);
 				if (found) return { file: found, existing: true };
 				const created = await this.library.create(data, this.settings.defaultStatus);
 				this.settle(created.path);
@@ -570,11 +612,11 @@ export default class LibraryPlugin extends Plugin {
 		}
 	}
 
-	private openImport(): void {
+	private openImport(importer: ReferenceImporter = this.importer, choices: ImportChoices = this.settings.zoteroImport): void {
 		new ImportModal(
 			this.app,
-			this.importer,
-			this.settings.zoteroImport,
+			importer,
+			choices,
 			this.settings.statuses,
 			() => this.saveSettings(),
 			(reportPath) => {

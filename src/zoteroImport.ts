@@ -18,35 +18,39 @@ export interface ImportBackup {
 	/** Each modified note's full text before the import, under its path before any rename. */
 	modified: { path: string; text: string }[];
 	renamed: { from: string; to: string }[];
+	/** Set when the import was stopped before it finished: notes done, of the total. */
+	stopped?: { done: number; total: number };
 }
 
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n?---(?:\r?\n|$)/;
 
-/** Runs a Zotero import: reads the export and the vault, plans, applies, reports, undoes. */
-export class ZoteroImporter {
+/**
+ * Runs an import: reads the vault, plans, applies, reports, undoes. Subclasses read their
+ * file into a plan; everything after the plan is shared, so every format gets the same
+ * matching, preview, report and undo.
+ */
+export abstract class ReferenceImporter {
+	/** "Zotero" or "Bibliography": names the report note and the backup file. */
+	protected abstract readonly kind: string;
+
 	constructor(
-		private app: App,
-		private library: Library,
-		private settings: () => LibrarySettings,
+		protected app: App,
+		protected library: Library,
+		protected settings: () => LibrarySettings,
 		/** Folder for import backups, inside the plugin's own folder. */
 		private backupDir: string,
 		/** Called with a new backup's path before the import writes anything, so Undo can find it even if the import fails. */
 		private onBackup: (path: string) => void | Promise<void> = () => undefined
 	) {}
 
-	async readExport(path: string): Promise<BbtExport> {
+	/** The dry run: read everything, decide everything, write nothing. Also returns the file's collection names. */
+	abstract plan(choices: ImportChoices): Promise<{ plan: ImportPlan; collections: string[] }>;
+
+	/** The file's text, from a vault path. */
+	protected async readText(path: string, hint: string): Promise<string> {
 		const file = this.app.vault.getAbstractFileByPath(normalizePath(path.trim()));
-		if (!(file instanceof TFile)) throw new Error(`No file at ${path}. Put the Better BibTeX JSON export in your vault and choose it.`);
-		let data: unknown;
-		try {
-			data = JSON.parse(await this.app.vault.read(file));
-		} catch {
-			throw new Error(`${path} isn't valid JSON.`);
-		}
-		const items = (data as BbtExport | null)?.items;
-		if (!Array.isArray(items) || items.some((i) => !i || typeof i.key !== "string" || typeof i.itemType !== "string"))
-			throw new Error(`${path} isn't a Better BibTeX JSON export (export with the "Better BibTeX JSON" format).`);
-		return data as BbtExport;
+		if (!(file instanceof TFile)) throw new Error(`No file at ${path}. ${hint}`);
+		return this.app.vault.read(file);
 	}
 
 	/** The reference notes, with frontmatter read leniently so broken YAML can be repaired. */
@@ -69,7 +73,36 @@ export class ZoteroImporter {
 		return out;
 	}
 
-	options(choices: ImportChoices): ImportOptions {
+	/** A vault file for an attachment path: first as a path in the vault, then by its filename. */
+	protected findAttachment(path: string, base = ""): string | undefined {
+		const cleaned = path.replace(/^file:\/\//i, "");
+		let decoded = cleaned;
+		try {
+			decoded = decodeURI(cleaned);
+		} catch {
+			/* keep it as written */
+		}
+		// A relative path inside the vault, resolved against the file's folder. Never outside it.
+		if (!/^([a-z]:)?[\\/]/i.test(decoded) && !/^[a-z]+:/i.test(decoded)) {
+			const parts: string[] = base ? base.split("/") : [];
+			let escaped = false;
+			for (const part of decoded.split(/[\\/]/)) {
+				if (part === "..") {
+					if (parts.length) parts.pop();
+					else escaped = true;
+				} else if (part && part !== ".") parts.push(part);
+			}
+			const f = !escaped && this.app.vault.getAbstractFileByPath(normalizePath(parts.join("/")));
+			if (f instanceof TFile) return f.path;
+		}
+		if (/^https?:/i.test(decoded)) return undefined;
+		const name = decoded.split(/[\\/]/).pop() ?? "";
+		if (!name) return undefined;
+		const f = this.app.metadataCache.getFirstLinkpathDest(name, "");
+		return f && f.name === name ? f.path : undefined;
+	}
+
+	options(choices: ImportChoices, base = ""): ImportOptions {
 		const s = this.settings();
 		return {
 			properties: s.propertyNames,
@@ -83,18 +116,10 @@ export class ZoteroImporter {
 			renameToCurrentKeys: choices.renameToCurrentKeys,
 			zoteroWins: choices.zoteroWins,
 			referencesFolder: s.referencesFolder,
-			findAttachment: (name) => {
-				const f = this.app.metadataCache.getFirstLinkpathDest(name, "");
-				return f && f.name === name ? f.path : undefined;
-			},
+			findAttachment: (path) => this.findAttachment(path, base),
 			parseYaml: (t): unknown => parseYaml(t),
+			citekeyPattern: s.citekeyPattern,
 		};
-	}
-
-	/** The dry run: read everything, decide everything, write nothing. */
-	async plan(choices: ImportChoices): Promise<{ plan: ImportPlan; exp: BbtExport }> {
-		const exp = await this.readExport(choices.exportPath);
-		return { plan: planImport(exp, await this.vaultNotes(), this.options(choices)), exp };
 	}
 
 	/** Properties for a planned note: bibliographic fields, then the workflow fields. */
@@ -125,10 +150,17 @@ export class ZoteroImporter {
 
 	/**
 	 * Apply a plan. Notes' bodies are never changed (broken frontmatter is replaced by its
-	 * repair). Existing values are kept unless "Zotero wins" is on, which applies to
+	 * repair). Existing values are kept unless "the file's values win" is on, which applies to
 	 * bibliographic fields only; workflow fields such as status are always filled, never replaced.
+	 * `stop` is asked before each note; once it says yes the import ends there, with a report
+	 * and a backup of what it wrote, and a repeat import picks up where it stopped.
 	 */
-	async apply(plan: ImportPlan, choices: ImportChoices, onProgress: (done: number, total: number) => void = () => undefined): Promise<ImportBackup> {
+	async apply(
+		plan: ImportPlan,
+		choices: ImportChoices,
+		onProgress: (done: number, total: number) => void = () => undefined,
+		stop: () => boolean = () => false
+	): Promise<ImportBackup> {
 		const stamp = localDate(new Date(), true);
 		const backup: ImportBackup = { version: 1, date: stamp, reportPath: "", created: [], modified: [], renamed: [] };
 		const total = plan.updates.length + plan.creates.length;
@@ -141,8 +173,14 @@ export class ZoteroImporter {
 		const backupPath = await this.saveBackup(backup, stamp);
 		// From here on the vault may change, so this run is what Undo should target.
 		await this.onBackup(backupPath);
+		const halt = () => {
+			if (!stop()) return false;
+			backup.stopped = { done, total };
+			return true;
+		};
 		try {
 			for (const u of plan.updates) {
+				if (halt()) break;
 				const file = this.app.vault.getAbstractFileByPath(u.note.path);
 				if (!(file instanceof TFile)) continue;
 				await this.library.exclusive(async () => {
@@ -173,13 +211,14 @@ export class ZoteroImporter {
 				onProgress(++done, total);
 			}
 			for (const c of plan.creates) {
+				if (backup.stopped || halt()) break;
 				await this.library.exclusive(async () => {
 					if (this.app.vault.getAbstractFileByPath(c.path)) return;
 					await this.library.ensureFolder(c.path.slice(0, c.path.lastIndexOf("/")) || "/");
 					const data = { ...c.data, title: c.data.title || c.extras.citekey };
 					let body = await this.library.renderBody(data, c.extras.citekey);
 					const notes = c.extras.notes.map((n) => htmlToText(n)).filter(Boolean);
-					if (notes.length) body = body.replace(/\n*$/, "\n") + `\n## Zotero notes\n\n${notes.join("\n\n---\n\n")}\n`;
+					if (notes.length) body = body.replace(/\n*$/, "\n") + `\n## ${plan.source} notes\n\n${notes.join("\n\n---\n\n")}\n`;
 					const file = await this.app.vault.create(c.path, body);
 					backup.created.push(file.path);
 					const { biblio, workflow } = this.properties({ ...c, data });
@@ -203,7 +242,7 @@ export class ZoteroImporter {
 		// Never overwrite an earlier import's backup, even one from the same minute.
 		let target = path;
 		for (let i = 0; !target; i++) {
-			const candidate = normalizePath(`${this.backupDir}/zotero-import ${stamp}${i ? ` ${i}` : ""}.json`);
+			const candidate = normalizePath(`${this.backupDir}/${this.kind.toLowerCase()}-import ${stamp}${i ? ` ${i}` : ""}.json`);
 			if (!(await adapter.exists(candidate))) target = candidate;
 		}
 		await adapter.write(target, JSON.stringify(backup));
@@ -253,9 +292,39 @@ export class ZoteroImporter {
 	private async writeReport(r: ImportReport, plan: ImportPlan, choices: ImportChoices, stamp: string, backup: ImportBackup): Promise<string> {
 		const folder = this.settings().referencesFolder.replace(/\/+$/, "");
 		const parent = folder.includes("/") ? folder.slice(0, folder.lastIndexOf("/")) : "";
-		const path = this.library.freePath(parent || "/", `Zotero import ${stamp}`, "md");
+		const path = this.library.freePath(parent || "/", `${this.kind} import ${stamp}`, "md");
 		await this.app.vault.create(path, importReportMarkdown(r, plan, choices, backup));
 		return path;
+	}
+}
+
+/** Imports a Better BibTeX JSON export (#18). */
+export class ZoteroImporter extends ReferenceImporter {
+	protected readonly kind = "Zotero";
+
+	async readExport(path: string): Promise<BbtExport> {
+		const text = await this.readText(path, "Put the Better BibTeX JSON export in your vault and choose it.");
+		let data: unknown;
+		try {
+			data = JSON.parse(text);
+		} catch {
+			throw new Error(`${path} isn't valid JSON.`);
+		}
+		const items = (data as BbtExport | null)?.items;
+		if (!Array.isArray(items) || items.some((i) => !i || typeof i.key !== "string" || typeof i.itemType !== "string"))
+			throw new Error(`${path} isn't a Better BibTeX JSON export (export with the "Better BibTeX JSON" format).`);
+		return data as BbtExport;
+	}
+
+	options(choices: ImportChoices): ImportOptions {
+		// Zotero's paths are on the computer Zotero ran on: only their filenames can be found in the vault.
+		return { ...super.options(choices), findAttachment: (path) => this.findAttachment(path.split(/[\\/]/).pop() ?? "") };
+	}
+
+	async plan(choices: ImportChoices): Promise<{ plan: ImportPlan; exp: BbtExport; collections: string[] }> {
+		const exp = await this.readExport(choices.exportPath);
+		const plan = planImport(exp, await this.vaultNotes(), this.options(choices));
+		return { plan, exp, collections: plan.report.collections };
 	}
 }
 
@@ -265,6 +334,7 @@ const link = (path: string) => `[[${path.replace(/\.md$/, "")}]]`;
 
 /** The import report as Markdown: counts first, then each list needing a look. Deterministic. */
 export function importReportMarkdown(r: ImportReport, plan: ImportPlan, choices: ImportChoices, backup?: ImportBackup): string {
+	const zotero = plan.source === "Zotero";
 	const lines: string[] = [];
 	const section = (heading: string, items: string[], note = "") => {
 		if (!items.length) return;
@@ -272,35 +342,55 @@ export function importReportMarkdown(r: ImportReport, plan: ImportPlan, choices:
 		if (note) lines.push(note, "");
 		for (const i of [...items].sort()) lines.push(`- ${i}`);
 	};
-	lines.push(`# Zotero import`, "", `From \`${choices.exportPath}\`. ${backup ? "Written" : "Dry run: nothing written"}.`, "");
+	lines.push(`# ${plan.source} import`, "", `From \`${choices.exportPath}\`. ${backup ? "Written" : "Dry run: nothing written"}.`, "");
+	if (backup?.stopped) lines.push(`Stopped after ${backup.stopped.done} of ${backup.stopped.total} notes. Run the import again to finish: notes already written are matched and updated, not duplicated.`, "");
 	lines.push("| | Count |", "|---|---|");
 	const row = (k: string, v: number) => lines.push(`| ${k} | ${v} |`);
-	row("Items in the export", r.items);
+	row(zotero ? "Items in the export" : "Records in the file", r.items);
 	row("Notes updated", plan.updates.length);
 	for (const [by, n] of Object.entries(r.matched)) if (n) row(`· matched by ${by}`, n);
 	row("Notes created", plan.creates.length);
 	row("Notes renamed to current citekeys", r.keyChanges.filter((k) => k.renamed).length);
 	row("Frontmatter repaired", r.repairedNotes.length);
-	row("Web snapshots left in Zotero's storage", r.snapshotsLeftInZotero);
-	row("Zotero child notes not copied into existing notes", r.zoteroNotesNotCopied);
-	section("Duplicates in Zotero, not created", r.zoteroDuplicates.map((d) => `\`${d.citekey}\` "${d.title}" matches ${link(d.note)}. Consider deleting it in Zotero.`));
+	if (zotero) row("Web snapshots left in Zotero's storage", r.snapshotsLeftInZotero);
+	row(zotero ? "Zotero child notes not copied into existing notes" : "Record notes not copied into existing notes", r.zoteroNotesNotCopied);
+	if (r.diagnostics.length) row("Records with problems", r.diagnostics.length);
+	section(
+		"Problems in the file",
+		r.diagnostics.map((d) => `${d.record}: ${d.problem}`),
+		"Records that couldn't be read are left out; fix them in the file and run the import again."
+	);
+	section(
+		zotero ? "Duplicates in Zotero, not created" : "Possible duplicates, not created",
+		r.zoteroDuplicates.map((d) => `\`${d.citekey}\` "${d.title}" matches ${link(d.note)}.${zotero ? " Consider deleting it in Zotero." : ""}`),
+		zotero ? "" : "A note with the same title exists. If it is the same work, give the note the record's citekey, DOI or ISBN and run the import again to update it."
+	);
 	section("Items without a note, not created", r.notCreated.map((k) => `\`${k}\``));
 	section("Duplicate notes to merge", r.duplicateNotes.map((d) => `${link(d.note)} is another note for \`${d.citekey}\`, kept as ${link(d.keptNote)}`), "Move any unique annotations into the kept note, point links at it, then delete the duplicate.");
 	section(
-		"Citekeys that changed in Better BibTeX",
+		zotero ? "Citekeys that changed in Better BibTeX" : "Citekeys that differ from the file",
 		r.keyChanges.map((k) => `${link(k.note)} → \`${k.citekey}\`${k.renamed ? " (renamed)" : k.reason ? ` (not renamed: ${k.reason})` : ""}`)
 	);
 	section("Notes from a group library", r.groupNotes.map(link), "A personal export doesn't include group libraries. These notes keep their own properties.");
 	section("Notes whose Zotero item isn't in the export", r.missingFromExport.map(link), "Probably deleted from Zotero after the note was made.");
 	section("Repaired frontmatter", r.repairedNotes.map(link));
 	section("Status decided against a collection", r.statusConflicts.map((c) => `${c.note.endsWith(".md") ? link(c.note) : `\`${c.note}\``}: ${c.detail}`));
-	section("Attachments outside the vault", r.attachmentsNotInVault.map((a) => `\`${a.citekey}\`: ${a.path}`), "Move them into the vault (for example, your attachments folder) and run the import again to link them.");
 	section(
-		"Zotero fields not imported",
-		Object.entries(r.unmappedFields).map(([f, n]) => `\`${f}\`: ${n} items`),
+		"Attachments outside the vault",
+		r.attachmentsNotInVault.map((a) => `\`${a.citekey}\`: ${a.path}`),
+		"Stacks never copies files from outside the vault. Move them into the vault (for example, your attachments folder) and run the import again to link them."
+	);
+	const sample = (f: string) => {
+		const keys = r.unmappedRecords[f] ?? [];
+		return zotero || !keys.length ? "" : ` (${keys.slice(0, 5).map((k) => `\`${k}\``).join(", ")}${keys.length > 5 ? ", …" : ""})`;
+	};
+	section(
+		zotero ? "Zotero fields not imported" : "Fields not imported",
+		Object.entries(r.unmappedFields).map(([f, n]) => `\`${f}\`: ${n} ${zotero ? "items" : n === 1 ? "record" : "records"}${sample(f)}`),
 		"These fields aren't part of the citation record (see docs/citation-fields.md)."
 	);
-	lines.push("", "## Annotations", "", "Better BibTeX exports don't include annotations made in Zotero's PDF reader. Highlights already in your notes (for example from the Zotero Integration plugin) are untouched. To bring the rest across, in Zotero choose File → Export PDF… on each annotated PDF, which writes the annotations into the file, keep that PDF in your vault, and run **Stacks: Extract annotations** on its note.");
-	if (backup) lines.push("", "## Undo", "", `Run **Stacks: Undo last Zotero import** to restore every changed note, rename notes back and move created notes to the trash.`);
+	if (zotero)
+		lines.push("", "## Annotations", "", "Better BibTeX exports don't include annotations made in Zotero's PDF reader. Highlights already in your notes (for example from the Zotero Integration plugin) are untouched. To bring the rest across, in Zotero choose File → Export PDF… on each annotated PDF, which writes the annotations into the file, keep that PDF in your vault, and run **Stacks: Extract annotations** on its note.");
+	if (backup) lines.push("", "## Undo", "", `Run **Stacks: Undo last import** to restore every changed note, rename notes back and move created notes to the trash.`);
 	return lines.join("\n") + "\n";
 }

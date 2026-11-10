@@ -2,9 +2,12 @@ import { App, Platform, PluginSettingTab, Setting, TFile, normalizePath, parseYa
 import { BaseConfig, baseDisplayNames, baseFolder, basePropertyNames, matchProperties, starterBase, validateBase } from "./bases";
 import { BibFormat, FORMAT_EXTENSIONS, FORMAT_LABELS, parseFilter } from "./bibliography";
 import { parsePattern } from "./citekey";
+import { CITE_FORMAT_LABELS, CiteFormat } from "./cite";
+import { displayCitationSettings } from "./ui/CitationSettings";
 import { DEFAULT_IMPORT_CHOICES, ImportChoices } from "./zotero";
 import type LibraryPlugin from "./main";
 import { PathSuggest, filePaths, folderPaths } from "./ui/PathSuggest";
+import { displayMaintenanceSettings } from "./ui/MaintenanceSettings";
 
 import { DEFAULT_COLOR_MAP, parseColorMap } from "./annotations";
 import { DEFAULT_PROPERTY_NAMES, FIELD_LABELS, PROPERTY_KEYS, PropertyKey } from "./properties";
@@ -41,8 +44,20 @@ export interface LibrarySettings {
 	autoExport: boolean;
 	/** The last Zotero import's choices, so a re-run starts from them. */
 	zoteroImport: ImportChoices;
-	/** Backup of the last Zotero import, for undo. */
+	/** The last bibliography file import's choices (CSL-JSON, BibTeX, RIS). */
+	bibliographyImport: ImportChoices;
+	/** Backup of the last import (Zotero or bibliography file), for undo. */
 	lastImportBackup: string;
+
+	// Citations
+	/** Vault path of a .csl style; empty uses the bundled Chicago author-date style. */
+	citationStyle: string;
+	/** Vault path of a CSL locale file; empty uses the bundled en-US locale. */
+	citationLocale: string;
+	/** How the insert citation command writes a citation. */
+	citeFormat: CiteFormat;
+	/** Ask for a page or other locator after picking a reference. */
+	citeAskLocator: boolean;
 
 	// Annotations
 	/** Heading the generated annotations go under; the plugin owns only what is between its markers. */
@@ -67,6 +82,12 @@ export interface LibrarySettings {
 	tabletAdoptUnknown: boolean;
 	/** What was sent to the tablet folder, by file name there. Kept by the plugin, not shown. */
 	tabletSent: Record<string, SentRecord>;
+
+	// Maintenance (health check)
+	/** Report items in a watched status unchanged for longer than this many days; 0 turns it off. */
+	healthStaleDays: number;
+	/** Statuses the stale check watches; empty watches every status. */
+	healthStaleStatuses: string[];
 }
 
 export const DEFAULT_SETTINGS: LibrarySettings = {
@@ -92,7 +113,12 @@ export const DEFAULT_SETTINGS: LibrarySettings = {
 	exportFilter: "",
 	autoExport: false,
 	zoteroImport: { ...DEFAULT_IMPORT_CHOICES },
+	bibliographyImport: { ...DEFAULT_IMPORT_CHOICES },
 	lastImportBackup: "",
+	citationStyle: "",
+	citationLocale: "",
+	citeFormat: "pandoc",
+	citeAskLocator: false,
 	annotationsHeading: "## Annotations",
 	colorMap: DEFAULT_COLOR_MAP,
 	statusAfterExtraction: "",
@@ -103,6 +129,8 @@ export const DEFAULT_SETTINGS: LibrarySettings = {
 	returnStatus: "reviewing",
 	tabletAdoptUnknown: false,
 	tabletSent: {},
+	healthStaleDays: 365,
+	healthStaleStatuses: ["queued", "reading", "reviewing"],
 };
 
 /** Merge saved data over defaults, including the nested property map. */
@@ -115,11 +143,18 @@ export function withDefaults(saved: Partial<LibrarySettings> | null | undefined)
 	if (!(s.exportFormat in FORMAT_LABELS)) s.exportFormat = DEFAULT_SETTINGS.exportFormat;
 	s.zoteroImport = { ...DEFAULT_IMPORT_CHOICES, ...(saved?.zoteroImport ?? {}) };
 	s.zoteroImport.collections = { ...(s.zoteroImport.collections ?? {}) };
+	s.bibliographyImport = { ...DEFAULT_IMPORT_CHOICES, ...(saved?.bibliographyImport ?? {}) };
+	s.bibliographyImport.collections = { ...(s.bibliographyImport.collections ?? {}) };
 	if (typeof s.libraryBase !== "string") s.libraryBase = "";
 	for (const k of ["annotationsHeading", "colorMap", "statusAfterExtraction", "preExtractionCommand", "tabletFolder", "sendStatus", "returnStatus"] as const)
 		if (typeof s[k] !== "string") s[k] = DEFAULT_SETTINGS[k];
+	if (typeof s.citationStyle !== "string") s.citationStyle = "";
+	if (typeof s.citationLocale !== "string") s.citationLocale = "";
+	if (!(s.citeFormat in CITE_FORMAT_LABELS)) s.citeFormat = DEFAULT_SETTINGS.citeFormat;
 	const sent = s.tabletSent as unknown;
 	s.tabletSent = sent && typeof sent === "object" && !Array.isArray(sent) ? { ...(sent as Record<string, SentRecord>) } : {};
+	if (typeof s.healthStaleDays !== "number" || !Number.isFinite(s.healthStaleDays) || s.healthStaleDays < 0) s.healthStaleDays = DEFAULT_SETTINGS.healthStaleDays;
+	s.healthStaleStatuses = Array.isArray(s.healthStaleStatuses) ? s.healthStaleStatuses.filter((x) => typeof x === "string") : [...DEFAULT_SETTINGS.healthStaleStatuses];
 	// An empty references folder would make every note in the vault a "reference" that
 	// automatic completion could rename and move.
 	if (typeof s.referencesFolder !== "string" || !s.referencesFolder.trim() || s.referencesFolder.trim() === "/")
@@ -218,7 +253,7 @@ export class LibrarySettingTab extends PluginSettingTab {
 		const s = this.plugin.settings;
 		let path = "Library.base";
 		for (let i = 1; this.app.vault.getAbstractFileByPath(path); i++) path = `Library ${i}.base`;
-		await this.app.vault.create(path, stringifyYaml(starterBase(s.referencesFolder, s.propertyNames)));
+		await this.app.vault.create(path, stringifyYaml(starterBase(s.referencesFolder, s.propertyNames, s.statuses)));
 		await this.useBase(path, true);
 	}
 
@@ -310,8 +345,8 @@ export class LibrarySettingTab extends PluginSettingTab {
 
 		new Setting(containerEl).setName("Lookups").setHeading();
 		text(
-			"Crossref contact email",
-			"Optional. Sent to Crossref as mailto for their polite pool. Nothing is sent when empty.",
+			"Contact email",
+			"Optional. Sent to Crossref as mailto for their polite pool, and to Unpaywall when you run find PDF (Unpaywall requires it). Nothing is sent when empty.",
 			() => s.crossrefMailto,
 			(v) => (s.crossrefMailto = v)
 		);
@@ -355,7 +390,9 @@ export class LibrarySettingTab extends PluginSettingTab {
 		});
 		new Setting(containerEl).addButton((b) => b.setButtonText("Export now").onClick(() => void this.plugin.exportBibliography(true)));
 
+		displayCitationSettings(this.app, containerEl, s, save);
 		this.displayAnnotations(containerEl);
+		displayMaintenanceSettings(containerEl, this.plugin);
 		this.displayBase(containerEl);
 	}
 

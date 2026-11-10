@@ -1,0 +1,44 @@
+{
+  "doi": "10.1038/nature12373",
+  "is_oa": true,
+  "best_oa_location": {
+    "host_type": "repository",
+    "is_best": true,
+    "license": "cc-by",
+    "repository_institution": "PubMed Central",
+    "url": "https://europepmc.org/articles/pmc4221854",
+    "url_for_landing_page": "https://europepmc.org/articles/pmc4221854",
+    "url_for_pdf": "https://europepmc.org/articles/pmc4221854?pdf=render",
+    "version": "acceptedVersion"
+  },
+  "oa_locations": [
+    {
+      "host_type": "repository",
+      "license": "cc-by",
+      "repository_institution": "PubMed Central",
+      "url_for_landing_page": "https://europepmc.org/articles/pmc4221854",
+      "url_for_pdf": "https://europepmc.org/articles/pmc4221854?pdf=render",
+      "version": "acceptedVersion"
+    },
+    {
+      "host_type": "repository",
+      "license": null,
+      "repository_institution": "Harvard University - Digital Access to Scholarship at Harvard (DASH)",
+      "url_for_landing_page": "http://nrs.harvard.edu/urn-3:HUL.InstRepos:12285462",
+      "url_for_pdf": "https://dash.harvard.edu/bitstream/handle/1/12285462/Nanometer-Scale%20Thermometry.pdf",
+      "version": "submittedVersion"
+    },
+    {
+      "host_type": "publisher",
+      "license": null,
+      "url_for_landing_page": "https://doi.org/10.1038/nature12373",
+      "url_for_pdf": null,
+      "version": "publishedVersion"
+    },
+    {
+      "host_type": "repository",
+      "url_for_pdf": "ftp://example.org/x.pdf",
+      "version": "submittedVersion"
+    }
+  ]
+}
