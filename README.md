@@ -174,7 +174,7 @@ Have a workflow that still sends you back to a separate reference manager? [Desc
 <details>
 <summary>Publishing a release</summary>
 
-Set the same new version in `manifest.json` and `package.json`, add it to `versions.json`, and commit. Push a matching, unused version tag. The Release workflow runs tests, builds, and publishes a release containing `main.js`, `manifest.json`, and `styles.css`, which Obsidian's community plugin directory picks up. A tag with a hyphen (`0.4.0-beta.1`) is published as a pre-release instead.
+Set the same new version in `manifest.json` and `package.json`, add it to `versions.json`, and merge that change to `main`. When `main` has a version with no tag yet, the Release workflow creates the tag, runs tests, builds, and publishes a release containing `main.js`, `manifest.json`, and `styles.css`, which Obsidian's community plugin directory picks up. Pushing a matching, unused version tag yourself also works. A version with a hyphen (`0.4.0-beta.1`) is published as a pre-release instead.
 
 </details>
 
