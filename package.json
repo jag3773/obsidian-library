@@ -9,6 +9,7 @@
     "test": "node esbuild.test.mjs && node --test test-dist/*.test.mjs",
     "bbt-accuracy": "esbuild scripts/bbt-accuracy.ts --bundle --platform=node --format=esm --outfile=test-dist/bbt-accuracy.mjs --log-level=warning && node test-dist/bbt-accuracy.mjs",
     "lint": "eslint src",
+    "check:mobile": "node scripts/check-mobile.mjs",
     "lint:scanner": "eslint -c eslint.scanner.config.mjs ."
   },
   "keywords": [
