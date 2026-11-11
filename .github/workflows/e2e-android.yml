@@ -1,0 +1,93 @@
+# End-to-end tests in the real Obsidian Android app, on an Android emulator. Nightly and on
+# request, not on every pull request: an emulator run takes several times longer than the
+# desktop run in e2e.yml. Runs the platform-independent specs (test/e2e/specs/common) through
+# wdio.android.conf.mts. See test/e2e/README.md.
+#
+# GitHub disables scheduled workflows after 60 days without repository activity; re-enable
+# this one on the Actions page if that happens.
+name: E2E Android
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - obsidian-version: latest
+            android-api-level: 36
+            android-profile: pixel
+          - obsidian-version: earliest
+            android-api-level: 36
+            android-profile: pixel
+    name: android (api ${{ matrix.android-api-level }}, obsidian ${{ matrix.obsidian-version }})
+    env:
+      AVD_ARGS: "-no-metrics -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Appium isn't a regular dev dependency; it is only needed here.
+      - run: npm run test:e2e:android:deps
+      - run: npm run build
+
+      - name: Get Obsidian cache key
+        run: |
+          npx tsx wdio.android.conf.mts | grep 'obsidian-cache-key:' > obsidian-versions-lock.txt
+          cat obsidian-versions-lock.txt
+          rm -rf .obsidian-cache
+        env:
+          CI: "true"
+          OBSIDIAN_VERSIONS: ${{ matrix.obsidian-version }}
+
+      - name: Cache Obsidian
+        uses: actions/cache@v4
+        with:
+          path: .obsidian-cache
+          key: obsidian-cache-android-${{ hashFiles('obsidian-versions-lock.txt') }}
+
+      # Hardware acceleration for the emulator (reactivecircus/android-emulator-runner README).
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # The AVD is created on the first run and reused (force-avd-creation: false); each run
+      # cold-boots it (-no-snapshot), as in the wdio-obsidian-service sample plugin.
+      - name: Cache AVD
+        id: avd-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-${{ matrix.android-api-level }}-${{ matrix.android-profile }}
+
+      - name: Run Android specs
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          avd-name: obsidian_test
+          api-level: ${{ matrix.android-api-level }}
+          arch: x86_64
+          target: google_apis
+          profile: ${{ matrix.android-profile }}
+          disk-size: 4096M
+          heap-size: 512M
+          force-avd-creation: false
+          emulator-options: -no-snapshot ${{ env.AVD_ARGS }}
+          script: npm run test:e2e:android
+        env:
+          OBSIDIAN_VERSIONS: ${{ matrix.obsidian-version }}

@@ -1,0 +1,66 @@
+# End-to-end tests in real Obsidian: desktop (the manifest's minAppVersion and the latest
+# release) and the latest release with the mobile UI emulated. See test/e2e/README.md.
+# The Android app runs nightly in e2e-android.yml.
+name: E2E
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run typecheck:e2e
+
+      # The Obsidian versions to test, resolved now ("latest" moves), become the cache key.
+      # Loading wdio.conf.mts prints them; drop the cache it creates so the restore below is clean.
+      - name: Get Obsidian cache key
+        run: |
+          npx tsx wdio.conf.mts | grep 'obsidian-cache-key:' > obsidian-versions-lock.txt
+          cat obsidian-versions-lock.txt
+          rm -rf .obsidian-cache
+        env:
+          CI: "true"
+
+      - name: Cache Obsidian
+        uses: actions/cache@v4
+        with:
+          path: .obsidian-cache
+          key: obsidian-cache-linux-${{ hashFiles('obsidian-versions-lock.txt') }}
+
+      # Obsidian needs a display: Xvfb as the X server and herbstluftwm as the window manager
+      # (some Obsidian features misbehave without one).
+      - name: Set up a virtual display
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -q -y xvfb herbstluftwm
+          export DISPLAY=:99
+          echo "DISPLAY=$DISPLAY" >> "$GITHUB_ENV"
+          Xvfb $DISPLAY -screen 0 1280x1024x24 +extension GLX -noreset &
+          sleep 1
+          herbstluftwm &
+          sleep 1
+
+      - name: Run desktop and emulated-mobile specs
+        run: npm run test:e2e
+        env:
+          # GitHub's Linux runners have 2 cores.
+          WDIO_MAX_INSTANCES: 2
