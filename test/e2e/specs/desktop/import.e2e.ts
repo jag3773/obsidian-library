@@ -59,7 +59,7 @@ describe("Import bibliography file", function () {
 		const preview = await modal.getText();
 		expect(preview).toContain("3 records in the file (CSL-JSON)");
 		expect(preview).toContain("2 notes to create");
-		expect(preview).toContain("1 notes to update");
+		expect(preview).toContain("1 note to update");
 		// Nothing written by the preview.
 		expect(await waitForFiles("References", () => true, "")).not.toContain("References/knuthArtComputerProgramming1968.md");
 

@@ -265,8 +265,9 @@ export default class LibraryPlugin extends Plugin {
 			this.registerEvent(
 				this.app.vault.on("modify", (f) => {
 					this.onPdfModified(f);
-					// An inbox file still being written (a PDF left as incomplete) is processed once it settles.
-					this.onInboxChange(f);
+					// A PDF still being written (left in the inbox as incomplete) is processed once it
+					// settles. Notes aren't: editing a clip that waits in the inbox shouldn't rerun it.
+					if (f instanceof TFile && f.extension === "pdf") this.onInboxChange(f);
 				})
 			);
 			// A pending completion belongs to the path it was scheduled for.

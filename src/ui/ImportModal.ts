@@ -167,7 +167,8 @@ export class ImportModal extends Modal {
 		const r = plan.report;
 		el.createEl("h4", { text: "Preview" });
 		const list = el.createEl("ul");
-		const line = (text: string, n: number) => n && list.createEl("li", { text: `${n} ${text}` });
+		// "notes to update" reads "1 note to update" for one.
+		const line = (text: string, n: number) => n && list.createEl("li", { text: `${n} ${n === 1 ? text.replace(/^(\w+?)s\b/, "$1") : text}` });
 		line(this.zotero ? "items in the export" : `records in the file (${plan.source})`, r.items);
 		line("notes to update", plan.updates.length);
 		for (const [by, n] of Object.entries(r.matched)) line(`matched by ${by}`, n);
