@@ -17,12 +17,26 @@ async function folderMenu(path: string, item: string): Promise<void> {
 		// Expand the folders above it.
 		(leaf.view as any).revealInFolder(app.vault.getFolderByPath(folder));
 	}, path);
+	// macOS shows native menus by default, which the test can't see or click. Ask for an HTML
+	// menu for this right-click (Menu.setUseNativeMenu, since Obsidian 0.16).
+	await browser.executeObsidian(({ app }) => {
+		const w = window as unknown as { stacksE2eMenuRef?: ReturnType<typeof app.workspace.on> };
+		if (w.stacksE2eMenuRef) app.workspace.offref(w.stacksE2eMenuRef);
+		w.stacksE2eMenuRef = app.workspace.on("file-menu", (menu) => {
+			menu.setUseNativeMenu(false);
+		});
+	});
 	const title = browser.$(`.nav-folder-title[data-path="${path}"]`);
 	await title.waitForDisplayed();
 	await title.click({ button: "right" });
 	const menuItem = browser.$(".menu").$(`.menu-item-title=${item}`);
 	await menuItem.waitForDisplayed();
 	await menuItem.click();
+	await browser.executeObsidian(({ app }) => {
+		const w = window as unknown as { stacksE2eMenuRef?: ReturnType<typeof app.workspace.on> };
+		if (w.stacksE2eMenuRef) app.workspace.offref(w.stacksE2eMenuRef);
+		delete w.stacksE2eMenuRef;
+	});
 }
 
 /** The select in the batch dialog's setting with this name. */
