@@ -21,3 +21,26 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
+
+  # Lint the way the Obsidian community directory scans a release (eslint.scanner.config.mjs),
+  # so its "risks" show up here before a release does. The directory doesn't publish which
+  # eslint-plugin-obsidianmd version it runs, and versions disagree: 0.5.0 reported findings
+  # on 0.4.0 that 0.5.1 doesn't. So run with the project's version and with 0.5.0.
+  # Errors fail the job; warnings are printed.
+  scanner-lint:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        obsidianmd: ["project", "0.5.0"]
+    name: scanner-lint (eslint-plugin-obsidianmd ${{ matrix.obsidianmd }})
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - if: matrix.obsidianmd != 'project'
+        run: npm install --no-save "eslint-plugin-obsidianmd@${{ matrix.obsidianmd }}"
+      - run: npm run lint:scanner
