@@ -1,6 +1,6 @@
 {
   "name": "obsidian-stacks",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "A research library for your vault.",
   "main": "main.js",
   "scripts": {
