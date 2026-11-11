@@ -197,11 +197,13 @@ src/
   batchActions.ts      batch scopes and per-note execution; batchCommands.ts wires commands and the Bases view
   sync.ts              offline detection and byte comparison for sync-safe filing (pure)
 test/                  node:test suites for the pure modules
+test/e2e/              end-to-end tests in real Obsidian (WebdriverIO): desktop, emulated mobile, Android
 ```
 
 Design rules:
 
 - Pure modules (`citekey`, `identifiers`, `template`, parsers inside each metadata source) take plain data and import nothing from Obsidian, so tests run in Node.
+- Every network request goes through the plugin's `request()` method, so end-to-end tests can answer from fixtures while the rest of the lookup code runs as it does for users.
 - All vault writes go through `fileManager.processFrontMatter` and `fileManager.renameFile`.
 - Event handlers register inside `workspace.onLayoutReady` so the startup scan of existing files never triggers them.
 - A per-path in-flight set prevents a handler from reacting to its own writes.

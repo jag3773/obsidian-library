@@ -168,7 +168,17 @@ npm run lint:scanner  # lint the way the Obsidian community directory scans a re
 npm run bbt-accuracy -- path/to/BetterBibTeX.json 2025
 ```
 
-Tests use an in-memory Obsidian stand-in for vault and settings behavior, so testing in a real vault is the most valuable help, especially for reading workflows, mobile use, and library views.
+### Testing
+
+`npm test` runs the unit tests against an in-memory Obsidian stand-in, in seconds. End-to-end tests run Stacks in real Obsidian, downloaded on first use, with lookups answered from fixtures instead of the network:
+
+```sh
+npm run build
+npm run test:e2e         # desktop (oldest supported and latest Obsidian) and the emulated mobile UI
+npm run test:e2e:mobile  # emulated mobile only
+```
+
+They run on every pull request; the Android app runs nightly. See [test/e2e/README.md](test/e2e/README.md) for Android, Linux without a display, and how sync and offline capture are simulated. iOS, real sync services and touch use aren't covered automatically ([what is tested](docs/sync-and-mobile.md#what-is-tested)), so testing in a real vault is still the most valuable help, especially on phones and tablets and with your sync setup.
 
 Have a workflow that still sends you back to a separate reference manager? [Describe it in an issue](https://github.com/jag3773/obsidian-stacks/issues/new). Concrete examples help shape what Stacks builds next.
 
