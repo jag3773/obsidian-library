@@ -4,3 +4,8 @@ test-dist/
 *.map
 .DS_Store
 data.json
+
+# End-to-end tests: downloaded Obsidian builds and APKs, wdio logs
+.obsidian-cache/
+.wdio-logs/
+!test/e2e/stub-plugin/main.js

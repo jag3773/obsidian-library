@@ -1,4 +1,4 @@
-import { Menu, Notice, Platform, Plugin, TAbstractFile, TFile, normalizePath, requestUrl } from "obsidian";
+import { Menu, Notice, Platform, Plugin, RequestUrlParam, RequestUrlResponse, TAbstractFile, TFile, normalizePath, requestUrl } from "obsidian";
 import { FORMAT_LABELS, render } from "./bibliography";
 import { nodeHost } from "./desktop";
 import { BibliographyExporter } from "./export";
@@ -71,6 +71,14 @@ export default class LibraryPlugin extends Plugin {
 	private watchedFolder = "";
 	private layoutReady = false;
 
+	/**
+	 * Every network request Stacks makes goes through here. The end-to-end tests replace it
+	 * on the loaded plugin to answer from fixtures (test/e2e/stub-plugin).
+	 */
+	request(params: RequestUrlParam): Promise<RequestUrlResponse> {
+		return requestUrl(params);
+	}
+
 	/** File-system access for the round trip and the pre-extraction command. Desktop only. */
 	protected createHost(): Host | null {
 		return Platform.isDesktopApp ? nodeHost(this.app) : null;
@@ -80,7 +88,7 @@ export default class LibraryPlugin extends Plugin {
 		this.alive = true;
 		await this.loadSettings();
 		this.fetcher = async (url, headers) => {
-			const res = await requestUrl({ url, headers, throw: false });
+			const res = await this.request({ url, headers, throw: false });
 			// The text is decoded only when read, so a downloaded PDF isn't decoded as text.
 			return { status: res.status, headers: res.headers, body: res.arrayBuffer, get text() { return res.text; } };
 		};

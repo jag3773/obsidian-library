@@ -1,0 +1,9 @@
+filters:
+  and:
+    - file.inFolder("References")
+views:
+  - type: table
+    name: All references
+    order:
+      - file.name
+      - note.year

@@ -1,0 +1,9 @@
+{
+  "id": "stacks-e2e-stub",
+  "name": "Stacks e2e network stub",
+  "version": "1.0.0",
+  "minAppVersion": "1.8.7",
+  "description": "Test-only helper: answers Obsidian's requestUrl from fixtures so end-to-end tests never reach the network.",
+  "author": "Stacks tests",
+  "isDesktopOnly": false
+}
