@@ -164,6 +164,7 @@ Copy the three plugin files into your vault as described above. For development:
 ```sh
 npm run dev      # watch build
 npm test         # pure-module and vault/settings tests
+npm run lint:scanner  # lint the way the Obsidian community directory scans a release
 npm run bbt-accuracy -- path/to/BetterBibTeX.json 2025
 ```
 
