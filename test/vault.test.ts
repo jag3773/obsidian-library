@@ -249,7 +249,7 @@ test("#6 attachment names use author and year from the note", async () => {
 		"References/key.md",
 		`---\n${JSON.stringify({ citekey: "key", title: "Example Book", authors: ["[[Ada Lovelace]]"], year: 1843 })}\n---\n`
 	);
-	const file = app.vault.addFile("Inbox/scan.pdf", "%PDF\n%%EOF");
+	const file = app.vault.addFile("Inbox/scan.pdf", "%PDF\nstartxref\n0\n%%EOF");
 	await library.exclusive(() => library.attach(note, file));
 	assert.equal(file.path, "References/attachments/Lovelace-1843-Example Book.pdf");
 });
@@ -264,7 +264,7 @@ test("#6 attachment names honour custom property names", async () => {
 		"References/key.md",
 		`---\n${JSON.stringify({ citekey: "key", name: "Example Book", creator: "Lovelace, Ada", date: "1843-01-01" })}\n---\n`
 	);
-	const file = app.vault.addFile("Inbox/scan.pdf", "%PDF\n%%EOF");
+	const file = app.vault.addFile("Inbox/scan.pdf", "%PDF\nstartxref\n0\n%%EOF");
 	await library.exclusive(() => library.attach(note, file));
 	assert.equal(file.path, "References/attachments/Lovelace-1843-Example Book.pdf");
 });
@@ -282,7 +282,7 @@ test("#6 a PDF filed with a brand-new note is named from its metadata", async ()
 			}),
 		}),
 	};
-	const file = app.vault.addFile("Inbox/scan.pdf", "%PDF\n%%EOF");
+	const file = app.vault.addFile("Inbox/scan.pdf", "%PDF\nstartxref\n0\n%%EOF");
 	const note = await inbox.process(file);
 	assert.ok(note);
 	assert.equal(file.path, "References/attachments/Lovelace-1843-lovelaceFreshPaper1843.pdf");
@@ -291,8 +291,8 @@ test("#6 a PDF filed with a brand-new note is named from its metadata", async ()
 test("#7 attachment links include the path when the basename isn't unique", async () => {
 	const { app, library } = setup();
 	const note = app.vault.addFile("References/key.md", `---\n{"citekey":"key","title":"T"}\n---\n`);
-	const unrelated = app.vault.addFile("References/key.pdf", "%PDF other\n%%EOF");
-	const file = app.vault.addFile("Inbox/new.pdf", "%PDF\n%%EOF");
+	const unrelated = app.vault.addFile("References/key.pdf", "%PDF other\nstartxref\n0\n%%EOF");
+	const file = app.vault.addFile("Inbox/new.pdf", "%PDF\nstartxref\n0\n%%EOF");
 	await library.exclusive(() => library.attach(note, file));
 	await library.exclusive(() => library.attach(note, file)); // re-attaching doesn't duplicate
 	await flush();
@@ -308,7 +308,7 @@ test("#7 attachment links include the path when the basename isn't unique", asyn
 test("#7 control: a unique basename keeps a short link", async () => {
 	const { app, library } = setup();
 	const note = app.vault.addFile("References/key.md", `---\n{"citekey":"key"}\n---\n`);
-	const file = app.vault.addFile("Inbox/new.pdf", "%PDF\n%%EOF");
+	const file = app.vault.addFile("Inbox/new.pdf", "%PDF\nstartxref\n0\n%%EOF");
 	await library.exclusive(() => library.attach(note, file));
 	await flush();
 	assert.equal(fm(app, note).pdf, "[[key.pdf]]");
@@ -401,8 +401,8 @@ test("#6 a second PDF for a just-reserved note is still named from metadata", as
 			}),
 		}),
 	};
-	const a = app.vault.addFile("Inbox/a.pdf", "%PDF a\n%%EOF");
-	const b = app.vault.addFile("Inbox/b.pdf", "%PDF b\n%%EOF");
+	const a = app.vault.addFile("Inbox/a.pdf", "%PDF a\nstartxref\n0\n%%EOF");
+	const b = app.vault.addFile("Inbox/b.pdf", "%PDF b\nstartxref\n0\n%%EOF");
 	const notes = await Promise.all([inbox.process(a), inbox.process(b)]);
 	assert.equal(notes[0], notes[1], "the second PDF attaches to the first note");
 	assert.deepEqual(

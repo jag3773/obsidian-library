@@ -45,16 +45,15 @@ export function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
 }
 
 /**
- * Whether a PDF's bytes end like a whole file: "%%EOF" within the last 1024 bytes, where PDF
- * readers look for it. A PDF that a sync client or a file copy is still writing doesn't, even
- * when PDF.js could read its first pages.
+ * Whether a PDF's bytes end like a whole file: its last 1024 bytes, where PDF readers look,
+ * hold the file's closing "startxref <offset> %%EOF", followed by nothing but whitespace. A PDF
+ * that a sync client or a file copy is still writing doesn't, even when PDF.js could read its
+ * first pages, and even when its content happens to contain the text "%%EOF".
  */
 export function looksComplete(bytes: Uint8Array): boolean {
 	const tail = bytes.subarray(Math.max(0, bytes.length - 1024));
-	const marker = [0x25, 0x25, 0x45, 0x4f, 0x46]; // %%EOF
-	outer: for (let i = tail.length - marker.length; i >= 0; i--) {
-		for (let j = 0; j < marker.length; j++) if (tail[i + j] !== marker[j]) continue outer;
-		return true;
-	}
-	return false;
+	// Latin-1 keeps one character per byte, so binary content can't hide or fake the pattern.
+	let text = "";
+	for (const b of tail) text += String.fromCharCode(b);
+	return /startxref[\0\t\n\f\r ]+\d+[\0\t\n\f\r ]+%%EOF[\0\t\n\f\r ]*$/.test(text);
 }
