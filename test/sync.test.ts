@@ -7,6 +7,8 @@ import { BatchActions } from "../src/batchActions";
 import { Inbox } from "../src/inbox";
 import { Cancelled, Library } from "../src/library";
 import { runBatch } from "../src/batch";
+import { looksComplete } from "../src/sync";
+import { buildPdf } from "./pdf-fixture";
 import LibraryPlugin from "../src/main";
 import { LibrarySettings, withDefaults } from "../src/settings";
 
@@ -87,7 +89,7 @@ test("#30 a clip whose lookup gets no answer stays in the inbox, then files once
 test("#30 a PDF naming a DOI stays in the inbox while offline", async () => {
 	const { app, inbox } = setup();
 	pdfWithText("doi:10.1000/off");
-	const file = app.vault.addFile("Inbox/scan.pdf", "%PDF off");
+	const file = app.vault.addFile("Inbox/scan.pdf", "%PDF off\nstartxref\n0\n%%EOF");
 	http.handler = offline;
 	assert.equal(await inbox.process(file), null);
 	assert.equal(file.path, "Inbox/scan.pdf");
@@ -101,10 +103,89 @@ test("#30 a PDF naming a DOI stays in the inbox while offline", async () => {
 test("#30 control: a PDF with no identifier is filed offline (no lookup needed)", async () => {
 	const { app, inbox } = setup();
 	pdfWithText("just some text");
-	const file = app.vault.addFile("Inbox/notes.pdf", "%PDF none");
+	const file = app.vault.addFile("Inbox/notes.pdf", "%PDF none\nstartxref\n0\n%%EOF");
 	http.handler = offline;
 	assert.ok(await inbox.process(file));
 	assert.equal(http.calls.length, 0);
+});
+
+// ---------------------------------------------------------------- PDFs still arriving
+
+test("#30 looksComplete: a PDF ends with startxref and %%EOF in its last 1024 bytes", () => {
+	const enc = (t: string) => new TextEncoder().encode(t);
+	assert.equal(looksComplete(enc("%PDF-1.7\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\nstartxref\n9\n%%EOF\n")), true);
+	assert.equal(looksComplete(enc("%PDF-1.7\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\nstartxref\r\n9\r\n%%EOF")), true, "CR LF line ends");
+	assert.equal(looksComplete(enc("%PDF-1.7\n1 0 obj\n<<>>\nendobj\ntrai")), false, "cut off before the end");
+	// Linearized PDFs have an early %%EOF; only the end of the file counts.
+	assert.equal(looksComplete(enc("%PDF-1.7\nstartxref\n0\n%%EOF\n" + "x".repeat(2000))), false);
+	assert.equal(looksComplete(enc("%PDF-1.7\nstartxref\n9\n%%EOF\n" + " ".repeat(500))), true, "trailing whitespace after %%EOF is fine");
+	assert.equal(looksComplete(enc("%PDF-1.7\nstartxref\n9\n%%EOF\nmore")), false, "%%EOF must be the end of the file");
+	assert.equal(looksComplete(new Uint8Array()), false);
+});
+
+test("#30 looksComplete: the text %%EOF inside a cut-off PDF's content doesn't count", () => {
+	// A whole PDF whose page says "%%EOF", cut off partway through, after that text.
+	const whole = buildPdf([{ text: [{ x: 72, y: 700, text: "This page mentions %%EOF in its text" }] }]);
+	const at = new TextDecoder("latin1").decode(whole).indexOf("%%EOF in its text");
+	assert.ok(at > 0, "the fixture has the text");
+	assert.equal(looksComplete(whole), true, "the whole file is complete");
+	assert.equal(looksComplete(whole.subarray(0, at + 40)), false, "a prefix ending after the text isn't");
+});
+
+test("#30 a PDF still being written is left in the inbox, and filed once it is complete", async () => {
+	const { app, inbox } = setup();
+	pdfWithText("doi:10.1000/partial");
+	crossref("10.1000/partial", "Partial Arrival");
+	const file = app.vault.addFile("Inbox/partial.pdf", "%PDF-1.7\n1 0 obj");
+	assert.equal(await inbox.process(file), null);
+	assert.equal(file.path, "Inbox/partial.pdf", "not filed under its filename");
+	assert.equal(app.vault.getMarkdownFiles().length, 0);
+	assert.equal(http.calls.length, 0, "not even looked up");
+	assert.ok(Notice.messages.some((m) => /partial\.pdf looks incomplete/.test(m)));
+
+	await app.vault.modifyBinary(file, new TextEncoder().encode("%PDF-1.7\n1 0 obj\n<<>>\nendobj\nstartxref\n0\n%%EOF\n").buffer as ArrayBuffer);
+	assert.ok(await inbox.process(file));
+	assert.ok(file.path.startsWith("References/attachments/"));
+});
+
+test("#30 Process inbox now files a PDF that looks incomplete as it is", async () => {
+	const { app, inbox } = setup();
+	pdfWithText("no identifier");
+	const file = app.vault.addFile("Inbox/odd.pdf", "%PDF-1.4 written by a tool that leaves out %%EO");
+	assert.ok(await inbox.process(file, true));
+	assert.ok(file.path.startsWith("References/attachments/"));
+});
+
+test("#30 an inbox PDF that finishes arriving after it was left as incomplete is processed automatically", async (t) => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const app = new App();
+	http.calls = [];
+	Notice.messages = [];
+	pdfWithText("doi:10.1000/slow");
+	crossref("10.1000/slow", "Slow Copy");
+	const plugin = await setupPlugin(app);
+	await flush();
+	const file = await app.vault.createBinary("Inbox/slow.pdf", new TextEncoder().encode("%PDF-1.7\n1 0 obj").buffer as ArrayBuffer);
+	t.mock.timers.tick(1000);
+	await flush();
+	assert.equal(file.path, "Inbox/slow.pdf");
+	assert.ok(Notice.messages.some((m) => /slow\.pdf looks incomplete/.test(m)));
+
+	// The rest arrives. Each change restarts the settle time.
+	await app.vault.modifyBinary(file, new TextEncoder().encode("%PDF-1.7\n1 0 obj\n<<>>").buffer as ArrayBuffer);
+	t.mock.timers.tick(500);
+	await app.vault.modifyBinary(file, new TextEncoder().encode("%PDF-1.7\n1 0 obj\n<<>>\nendobj\nstartxref\n0\n%%EOF\n").buffer as ArrayBuffer);
+	t.mock.timers.tick(500);
+	await flush();
+	assert.equal(file.path, "Inbox/slow.pdf", "still settling");
+	// The settle time is over, but the first attempt only just finished: it looks again once that settles too.
+	t.mock.timers.tick(500);
+	await flush();
+	t.mock.timers.tick(1000);
+	await flush();
+	assert.ok(file.path.startsWith("References/attachments/"), file.path);
+	assert.equal(app.vault.getMarkdownFiles().filter((f) => f.path.startsWith("References/")).length, 1, "filed once");
+	plugin.unload();
 });
 
 // ---------------------------------------------------------------- idempotent filing
@@ -136,10 +217,10 @@ test("#30 Add reference finds an unindexed note with the same DOI instead of cre
 test("#30 an identical PDF that is already filed isn't filed a second time", async () => {
 	const { app, inbox } = setup();
 	app.vault.addFile("References/lovelaceOnlinePaper1843.md", `---\n{"citekey":"lovelaceOnlinePaper1843","doi":"10.1000/twice","pdf":"[[lovelaceOnlinePaper1843.pdf]]"}\n---\n`);
-	const filed = app.vault.addFile("References/attachments/lovelaceOnlinePaper1843.pdf", "%PDF same bytes");
+	const filed = app.vault.addFile("References/attachments/lovelaceOnlinePaper1843.pdf", "%PDF same bytes\nstartxref\n0\n%%EOF");
 	pdfWithText("doi:10.1000/twice");
 	crossref("10.1000/twice", "Online Paper");
-	const copy = app.vault.addFile("Inbox/copy.pdf", "%PDF same bytes");
+	const copy = app.vault.addFile("Inbox/copy.pdf", "%PDF same bytes\nstartxref\n0\n%%EOF");
 	assert.equal(await inbox.process(copy), null);
 	assert.equal(copy.path, "Inbox/copy.pdf", "left where it is, nothing overwritten");
 	assert.equal(app.vault.getAbstractFileByPath("References/attachments/lovelaceOnlinePaper1843 1.pdf"), null);
@@ -149,10 +230,10 @@ test("#30 an identical PDF that is already filed isn't filed a second time", asy
 test("#30 control: a different PDF for the same reference is still attached", async () => {
 	const { app, inbox } = setup();
 	app.vault.addFile("References/lovelaceOnlinePaper1843.md", `---\n{"citekey":"lovelaceOnlinePaper1843","doi":"10.1000/twice"}\n---\n`);
-	app.vault.addFile("References/attachments/lovelaceOnlinePaper1843.pdf", "%PDF version one");
+	app.vault.addFile("References/attachments/lovelaceOnlinePaper1843.pdf", "%PDF version one\nstartxref\n0\n%%EOF");
 	pdfWithText("doi:10.1000/twice");
 	crossref("10.1000/twice", "Online Paper");
-	const v2 = app.vault.addFile("Inbox/v2.pdf", "%PDF version two");
+	const v2 = app.vault.addFile("Inbox/v2.pdf", "%PDF version two\nstartxref\n0\n%%EOF");
 	assert.ok(await inbox.process(v2));
 	assert.equal(v2.path, "References/attachments/lovelaceOnlinePaper1843 1.pdf");
 });

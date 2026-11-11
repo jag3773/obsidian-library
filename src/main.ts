@@ -1,4 +1,4 @@
-import { Menu, Notice, Platform, Plugin, TAbstractFile, TFile, normalizePath, requestUrl } from "obsidian";
+import { Menu, Notice, Platform, Plugin, RequestUrlParam, RequestUrlResponse, TAbstractFile, TFile, normalizePath, requestUrl } from "obsidian";
 import { FORMAT_LABELS, render } from "./bibliography";
 import { nodeHost } from "./desktop";
 import { BibliographyExporter } from "./export";
@@ -63,11 +63,21 @@ export default class LibraryPlugin extends Plugin {
 	private completeTimers = new Map<string, { timer: number; id: Identifier }>();
 	/** Last seen status of each reference note, to notice a change to the send status. */
 	private statuses = new Map<string, string>();
+	/** Pending inbox processing by path, restarted while a file keeps changing. */
+	private inboxTimers = new Map<string, number>();
 	/** Pending extract-on-save runs by PDF path. */
 	private pdfTimers = new Map<string, number>();
 	/** Tablet folder the watcher was started for. */
 	private watchedFolder = "";
 	private layoutReady = false;
+
+	/**
+	 * Every network request Stacks makes goes through here. The end-to-end tests replace it
+	 * on the loaded plugin to answer from fixtures (test/e2e/stub-plugin).
+	 */
+	request(params: RequestUrlParam): Promise<RequestUrlResponse> {
+		return requestUrl(params);
+	}
 
 	/** File-system access for the round trip and the pre-extraction command. Desktop only. */
 	protected createHost(): Host | null {
@@ -78,7 +88,7 @@ export default class LibraryPlugin extends Plugin {
 		this.alive = true;
 		await this.loadSettings();
 		this.fetcher = async (url, headers) => {
-			const res = await requestUrl({ url, headers, throw: false });
+			const res = await this.request({ url, headers, throw: false });
 			// The text is decoded only when read, so a downloaded PDF isn't decoded as text.
 			return { status: res.status, headers: res.headers, body: res.arrayBuffer, get text() { return res.text; } };
 		};
@@ -244,7 +254,7 @@ export default class LibraryPlugin extends Plugin {
 		// Register after the initial index so existing files don't fire "create".
 		this.app.workspace.onLayoutReady(() => {
 			for (const f of this.library.referenceFiles()) this.statuses.set(f.path, this.statusOf(f));
-			this.registerEvent(this.app.vault.on("create", (f) => this.onCreate(f)));
+			this.registerEvent(this.app.vault.on("create", (f) => this.onInboxChange(f)));
 			this.registerEvent(
 				this.app.metadataCache.on("changed", (file) => {
 					this.scheduleCompletion(file);
@@ -252,7 +262,14 @@ export default class LibraryPlugin extends Plugin {
 					this.onStatusChange(file);
 				})
 			);
-			this.registerEvent(this.app.vault.on("modify", (f) => this.onPdfModified(f)));
+			this.registerEvent(
+				this.app.vault.on("modify", (f) => {
+					this.onPdfModified(f);
+					// A PDF still being written (left in the inbox as incomplete) is processed once it
+					// settles. Notes aren't: editing a clip that waits in the inbox shouldn't rerun it.
+					if (f instanceof TFile && f.extension === "pdf") this.onInboxChange(f);
+				})
+			);
 			// A pending completion belongs to the path it was scheduled for.
 			this.registerEvent(
 				this.app.vault.on("rename", (f, oldPath) => {
@@ -300,6 +317,7 @@ export default class LibraryPlugin extends Plugin {
 		this.exportTimer = null;
 		this.roundTrip?.stop();
 		this.pdfTimers.clear();
+		this.inboxTimers.clear();
 		for (const t of this.timers) window.clearTimeout(t);
 		this.timers.clear();
 		this.completeTimers.clear();
@@ -396,17 +414,30 @@ export default class LibraryPlugin extends Plugin {
 		}
 	}
 
-	private onCreate(f: TAbstractFile): void {
+	/** A file created or changed: process it when it is in the inbox, once it stops changing. */
+	private onInboxChange(f: TAbstractFile): void {
 		if (!(f instanceof TFile) || !this.settings.processInboxAutomatically || !this.inbox.accepts(f)) return;
-		// Give the writer (Web Clipper, Finder copy, sync) a moment to finish.
-		this.later(() => {
-			// The file may have been moved or deleted while it settled.
-			if (!this.library.exists(f) || !this.inbox.accepts(f)) return;
-			void this.guard(f, () => this.inbox.process(f));
-		}, INBOX_SETTLE_MS);
+		// Give the writer (Web Clipper, Finder copy, sync) a moment to finish; each change restarts the wait.
+		const path = f.path;
+		const pending = this.inboxTimers.get(path);
+		if (pending !== undefined) this.clearLater(pending);
+		this.inboxTimers.set(
+			path,
+			this.later(() => {
+				this.inboxTimers.delete(path);
+				// The file may have been moved or deleted while it settled.
+				if (!this.library.exists(f) || !this.inbox.accepts(f)) return;
+				// Still being processed, or just processed and left (incomplete): look again once that settles.
+				if (this.busy.has(f.path)) return this.onInboxChange(f);
+				void this.guard(f, () => this.inbox.process(f));
+			}, INBOX_SETTLE_MS)
+		);
 	}
 
-	/** Process every file in the inbox. `quiet` (at startup) says nothing when it is empty. */
+	/**
+	 * Process every file in the inbox. `quiet` (at startup) says nothing when it is empty and
+	 * leaves a PDF that looks incomplete; the command files such a PDF as it is.
+	 */
 	private async processWholeInbox(quiet = false): Promise<void> {
 		const files = this.app.vault.getFiles().filter((f) => this.inbox.accepts(f));
 		if (!files.length) {
@@ -416,7 +447,7 @@ export default class LibraryPlugin extends Plugin {
 		let done = 0;
 		for (const f of files) {
 			if (!this.alive) return;
-			if (await this.guard(f, () => this.inbox.process(f))) done++;
+			if (await this.guard(f, () => this.inbox.process(f, !quiet))) done++;
 		}
 		new Notice(`${PREFIX}: processed ${done} of ${files.length} inbox items.`);
 	}

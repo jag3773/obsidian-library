@@ -21,6 +21,7 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
+      - run: npm run check:mobile
 
   # Lint the way the Obsidian community directory scans a release (eslint.scanner.config.mjs),
   # so its "risks" show up here before a release does. The directory doesn't publish which

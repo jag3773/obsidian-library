@@ -128,7 +128,7 @@ test("after adopting a base, an inbox PDF lands in the base's folder with its at
 			}),
 		}),
 	};
-	const file = app.vault.addFile("resources/inbox/scan.pdf", "%PDF");
+	const file = app.vault.addFile("resources/inbox/scan.pdf", "%PDF\nstartxref\n0\n%%EOF");
 	const note = await plugin.inbox.process(file);
 	assert.ok(note);
 	assert.ok(note.path.startsWith("resources/zotero/"), note.path);

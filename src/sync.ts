@@ -43,3 +43,17 @@ export function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
 	for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
 	return true;
 }
+
+/**
+ * Whether a PDF's bytes end like a whole file: its last 1024 bytes, where PDF readers look,
+ * hold the file's closing "startxref <offset> %%EOF", followed by nothing but whitespace. A PDF
+ * that a sync client or a file copy is still writing doesn't, even when PDF.js could read its
+ * first pages, and even when its content happens to contain the text "%%EOF".
+ */
+export function looksComplete(bytes: Uint8Array): boolean {
+	const tail = bytes.subarray(Math.max(0, bytes.length - 1024));
+	// Latin-1 keeps one character per byte, so binary content can't hide or fake the pattern.
+	let text = "";
+	for (const b of tail) text += String.fromCharCode(b);
+	return /startxref[\0\t\n\f\r ]+\d+[\0\t\n\f\r ]+%%EOF[\0\t\n\f\r ]*$/.test(text);
+}
