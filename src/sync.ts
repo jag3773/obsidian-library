@@ -43,3 +43,18 @@ export function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
 	for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
 	return true;
 }
+
+/**
+ * Whether a PDF's bytes end like a whole file: "%%EOF" within the last 1024 bytes, where PDF
+ * readers look for it. A PDF that a sync client or a file copy is still writing doesn't, even
+ * when PDF.js could read its first pages.
+ */
+export function looksComplete(bytes: Uint8Array): boolean {
+	const tail = bytes.subarray(Math.max(0, bytes.length - 1024));
+	const marker = [0x25, 0x25, 0x45, 0x4f, 0x46]; // %%EOF
+	outer: for (let i = tail.length - marker.length; i >= 0; i--) {
+		for (let j = 0; j < marker.length; j++) if (tail[i + j] !== marker[j]) continue outer;
+		return true;
+	}
+	return false;
+}

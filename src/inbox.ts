@@ -10,7 +10,7 @@ import { ReferenceData } from "./metadata/types";
 import { readPdf } from "./pdf";
 import { PropertyKey } from "./properties";
 import { LibrarySettings } from "./settings";
-import { NetworkTracker } from "./sync";
+import { NetworkTracker, looksComplete } from "./sync";
 
 /** Handles files that land in the inbox folder. */
 export class Inbox {
@@ -33,9 +33,13 @@ export class Inbox {
 		return this.library.exists(file) && this.accepts(file);
 	}
 
-	async process(file: TFile): Promise<TFile | null> {
+	/**
+	 * File one inbox item. `explicit` (Process inbox now) files a PDF that looks incomplete as
+	 * it is; automatic processing leaves it for when it has fully arrived.
+	 */
+	async process(file: TFile, explicit = false): Promise<TFile | null> {
 		if (file.extension === "md") return this.processNote(file);
-		if (file.extension === "pdf") return this.processPdf(file);
+		if (file.extension === "pdf") return this.processPdf(file, explicit);
 		return null;
 	}
 
@@ -88,8 +92,14 @@ export class Inbox {
 	}
 
 	/** A PDF: find a DOI or ISBN inside, look it up, create the note, file the PDF. */
-	async processPdf(file: TFile): Promise<TFile | null> {
+	async processPdf(file: TFile, explicit = false): Promise<TFile | null> {
 		const s = this.settings();
+		// A PDF still being copied or synced in: filing it now would file a truncated copy under
+		// its filename. Its next change brings it back here (main.ts watches inbox changes).
+		if (!explicit && !looksComplete(new Uint8Array(await this.app.vault.readBinary(file)))) {
+			new Notice(`Stacks: ${file.name} looks incomplete (still being copied or synced?); left in the inbox until it is complete.`);
+			return null;
+		}
 		let data: ReferenceData | null = null;
 		let pdfTitle: string | undefined;
 		let pdfAuthor: string | undefined;
