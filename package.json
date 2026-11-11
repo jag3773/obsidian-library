@@ -13,6 +13,7 @@
     "test:e2e:android": "wdio run ./wdio.android.conf.mts",
     "test:e2e:android:deps": "npm install --no-save appium@3.9.0 appium-uiautomator2-driver@8.7.3 @wdio/appium-service@9.33.1",
     "typecheck:e2e": "tsc -p test/e2e/tsconfig.json",
+    "test:e2e:config": "node --import tsx --test test/e2e/*.test.mts",
     "bbt-accuracy": "esbuild scripts/bbt-accuracy.ts --bundle --platform=node --format=esm --outfile=test-dist/bbt-accuracy.mjs --log-level=warning && node test-dist/bbt-accuracy.mjs",
     "lint": "eslint src",
     "check:mobile": "node scripts/check-mobile.mjs",

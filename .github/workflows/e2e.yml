@@ -29,6 +29,7 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm run typecheck:e2e
+      - run: npm run test:e2e:config
 
       # The Obsidian versions to test, resolved now ("latest" moves), become the cache key.
       # Loading wdio.conf.mts prints them; drop the cache it creates so the restore below is clean.

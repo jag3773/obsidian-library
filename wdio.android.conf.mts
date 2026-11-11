@@ -12,12 +12,13 @@
 //   APPIUM_HOST, APPIUM_PORT  an Appium server to use instead of the one the service starts
 import * as path from "node:path";
 import { env } from "node:process";
-import { parseObsidianVersions } from "wdio-obsidian-service";
+import { androidVersions } from "./test/e2e/android-versions.mjs";
 
 const cacheDir = path.resolve(".obsidian-cache");
 
 // Beta versions aren't available for the Android app.
-const versions = await parseObsidianVersions(env.OBSIDIAN_VERSIONS ?? "latest", { cacheDir });
+// Android releases separately from desktop, so versions come from Android's own releases.
+const versions = await androidVersions(env.OBSIDIAN_VERSIONS ?? "latest", cacheDir);
 if (env.CI) {
 	// The workflow uses this line as the key for its .obsidian-cache cache.
 	console.log("obsidian-cache-key:", JSON.stringify(versions));
